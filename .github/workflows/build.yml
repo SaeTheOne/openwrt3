@@ -112,7 +112,7 @@ jobs:
       env:
         OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
         SELECT_PACKITPATH: openwrt_packit  # 根据需要设置
-        PACKAGE_SOC: all  # 或者具体的 SOC 名称，如 s905d
+        PACKAGE_SOC: s905d  # 或者具体的 SOC 名称，如 s905d
         KERNEL_VERSION_NAME: 6.1.y_6.12.y
         WHOAMI: ophub  # 根据需要设置
 
