@@ -52,6 +52,11 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
+        sudo rm -rf /usr/share/man/*  # 删除手册页
+        sudo rm -rf /var/cache/apt/archives/*  # 清理 apt 缓存
+        sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile  # 增加交换分区
+        df -h  # 查看空间使用情况
+    
 
     - name: 克隆源码
       working-directory: /workdir
