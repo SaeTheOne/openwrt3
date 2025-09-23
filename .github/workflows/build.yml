@@ -1,7 +1,7 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 #
-# File: .github/workflows/openwrt-bulder.yml
+# File: .github/workflows/openwrt-builder.yml
 # Description: Build OpenWrt using GitHub Actions
 #
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
@@ -18,7 +18,7 @@ on:
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: v24.10.2
+  REPO_BRANCH: main  # 请确认分支存在，如 v24.10.2
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -35,10 +35,9 @@ jobs:
       packages: write  # 可选：如果需要发布到GitHub Packages
     runs-on: ubuntu-22.04
 
-    
     steps:
     - name: 检出代码
-      uses: actions/checkout@main
+      uses: actions/checkout@v4  # 推荐使用最新版本
 
     - name: 初始化环境
       env:
@@ -47,7 +46,7 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -103,71 +102,29 @@ jobs:
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
     - name: Flippy
+      id: flippy
       uses: unifreq/openwrt_packit@master
       env:
         OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
-        PACKAGE_SOC: SCRIPT_S905D
+        SELECT_PACKITPATH: openwrt_packit  # 根据需要设置
+        PACKAGE_SOC: all  # 或者具体的 SOC 名称，如 s905d
         KERNEL_VERSION_NAME: 6.1.y_6.12.y
-        
+        WHOAMI: ophub  # 根据需要设置
+
     - name: Upload OpenWrt Firmware to Release
+      if: ${{ steps.flippy.outputs.status }} == 'success'  # 确保 Flippy 步骤成功
       uses: ncipollo/release-action@main
       with:
-        tag: openwrt_armsr-armv8_${{ env.PACKAGED_OUTPUTDATE }}
-        artifacts: ${{ env.PACKAGED_OUTPUTPATH }}/*
+        tag: openwrt_armsr-armv8_${{ env.FILE_DATE }}
+        artifacts: /opt/openwrt_packit/output/*.img  # 根据实际情况调整路径
         allowUpdates: true
-        token: ${{ secrets.GH_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}  # 使用默认的 GitHub Token
         body: |
           This is OpenWrt firmware for Armv8
           * Firmware information
           Default IP: 192.168.1.1
           Default username: root
           Default password: password
-          
-    # - name: 检查空间使用情况
-    #   if: (!cancelled())
-    #   run: df -hT
-
-    # - name: 上传bin目录
-    #   uses: actions/upload-artifact@main
-    #   if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-    #   with:
-    #     name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-    #     path: openwrt/bin
-
-    # - name: 整理文件
-    #   id: organize
-    #   if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-    #   run: |
-    #     cd openwrt/bin/targets/*/*
-    #     rm -rf packages
-    #     echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-    #     echo "status=success" >> $GITHUB_OUTPUT
-
-    # - name: 上传固件目录
-    #   uses: actions/upload-artifact@main
-    #   if: steps.organize.outputs.status == 'success' && !cancelled()
-    #   with:
-    #     name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-    #     path: ${{ env.FIRMWARE }}
-
-    # - name: 生成发布标签
-    #   id: tag
-    #   if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-    #   run: |
-    #     echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-    #     touch release.txt
-    #     [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
-    #     echo "status=success" >> $GITHUB_OUTPUT
-
-    # - name: 上传固件到发布版本
-    #   uses: softprops/action-gh-release@master
-    #   if: steps.tag.outputs.status == 'success' && !cancelled()
-    #   env:
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #   with:
-    #     tag_name: ${{ steps.tag.outputs.release_tag }}
-    #     body_path: release.txt
-    #     files: ${{ env.FIRMWARE }}/*
 
     - name: 删除工作流运行记录
       uses: Mattraks/delete-workflow-runs@main
@@ -176,13 +133,10 @@ jobs:
         keep_minimum_runs: 2
 
     - name: 移除旧的发布版本
-      uses: dev-drprasad/delete-older-releases@master
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      uses: dev-drprasad/delete-older-releases@master
       with:
         keep_latest: 3
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-
-          
