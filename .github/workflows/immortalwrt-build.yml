@@ -1,197 +1,31 @@
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-#
-# File: .github/workflows/immortalwrt-build.yml
-# Description: Build ImmortalWrt using GitHub Actions
-#
-
-name: immortalwrt Builder
-
-on:
-  repository_dispatch:
-  workflow_dispatch:
-
-env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: v24.10.2
-  FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: .config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
-  UPLOAD_BIN_DIR: false
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
-  TZ: Asia/Shanghai
-  TEMP_DIR: /mnt/openwrt-temp
-  SWAP_FILE: /mnt/swapfile
-
-jobs:
-  build:
-    permissions:
-      contents: write
-      packages: write
-    runs-on: ubuntu-22.04
-
-    steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
-
-    - name: 初始化环境与磁盘空间管理
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        # 清理系统空间
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq autoremove --purge
-        sudo -E apt-get -qq clean
-        sudo rm -rf /usr/share/man/* /var/cache/apt/archives/*
-        
-        # 安装必要依赖
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
-        
-        # 配置/mnt分区权限和临时目录
-        sudo chmod -R 777 /mnt  # 确保/mnt分区有足够权限
-        sudo mkdir -p ${{ env.TEMP_DIR }}
-        sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}
-        sudo chmod -R 755 ${{ env.TEMP_DIR }}
-        
-        # 创建并配置交换文件
-        if [ ! -f "${{ env.SWAP_FILE }}" ]; then
-          sudo fallocate -l 16G ${{ env.SWAP_FILE }}
-          sudo chmod 600 ${{ env.SWAP_FILE }}
-          sudo mkswap ${{ env.SWAP_FILE }}
-          sudo swapon ${{ env.SWAP_FILE }}
-        fi
-        
-        # 设置时区
-        sudo timedatectl set-timezone "$TZ"
-        
-        # 显示系统状态
-        df -h
-        free -h
-        mount | grep /mnt
-        ls -ld /mnt
-
-    - name: 克隆源码到临时目录
+    - name: 克隆源码到临时目录（强制拉取稳定版）
       working-directory: ${{ env.TEMP_DIR }}
       run: |
-        df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        # 彻底清理旧源码（避免缓存影响）
+        sudo rm -rf openwrt
+        # 克隆指定的v24.10.2稳定版，确保代码完整
+        git clone $REPO_URL -b v24.10.2 --depth 1 openwrt
+        # 验证分支是否正确切换
+        cd openwrt
+        echo "当前分支：$(git branch --show-current)"
+        echo "最新提交：$(git log -1 --pretty=format:%H)"
+        # 创建软链接并修复权限
         ln -sf ${{ env.TEMP_DIR }}/openwrt $GITHUB_WORKSPACE/openwrt
-        # 确保源码目录权限正确
         sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}/openwrt
 
-    # 新增步骤：删除冲突的内核补丁
-    - name: 移除冲突的内核补丁（修复补丁失败问题）
+    - name: 移除稳定版中仍存在的冲突补丁
       run: |
-        # 定位冲突补丁路径（根据日志中的补丁路径）
-        CONFLICT_PATCH="${{ env.TEMP_DIR }}/openwrt/target/linux/generic/backport-6.6/068-01-v6.7-netkit-bpf-Add-bpf-programmable-net-device.patch"
-        # 检查补丁是否存在，存在则删除或重命名
-        if [ -f "$CONFLICT_PATCH" ]; then
-          echo "发现冲突补丁，正在移除：$CONFLICT_PATCH"
-          sudo rm -f "$CONFLICT_PATCH"  # 直接删除补丁
-          # 或重命名（保留文件，避免后续误判）：sudo mv "$CONFLICT_PATCH" "$CONFLICT_PATCH.bak"
+        # 检查v24.10.2中是否仍有068系列补丁，如有则全部删除
+        CONFLICT_PATCH_DIR="${{ env.TEMP_DIR }}/openwrt/target/linux/generic/backport-6.6"
+        if [ -d "$CONFLICT_PATCH_DIR" ]; then
+          CONFLICT_PATCHES=$(find "$CONFLICT_PATCH_DIR" -name "068-*.patch")
+          if [ -n "$CONFLICT_PATCHES" ]; then
+            echo "v24.10.2中仍发现冲突补丁，删除："
+            echo "$CONFLICT_PATCHES"
+            sudo rm -f $CONFLICT_PATCHES
+          else
+            echo "v24.10.2中未发现068系列补丁，跳过"
+          fi
         else
-          echo "未找到冲突补丁，跳过移除步骤"
+          echo "补丁目录不存在，跳过"
         fi
-    - name: 加载自定义软件源
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
-
-    - name: 更新软件源
-      run: cd openwrt && ./scripts/feeds clean && ./scripts/feeds update -af && ./scripts/feeds install -af
-
-    - name: 加载自定义配置
-      run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-        
-    - name: 检查软件包依赖
-      run: |
-        cd openwrt
-        # 检查是否有冲突的软件包
-        make defconfig
-        make check V=s
-
-    - name: 下载软件包到临时目录
-      id: package
-      run: |
-        cd openwrt
-        export CCACHE_DIR=${{ env.TEMP_DIR }}/.ccache
-        mkdir -p $CCACHE_DIR
-        make defconfig
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-
-    # 插入位置：在下载软件包和Flippy步骤之间
-    - name: 编译固件（极致详细日志模式）
-      id: compile
-      run: |
-        cd openwrt
-        export TMPDIR=${{ env.TEMP_DIR }}/tmp
-        mkdir -p $TMPDIR
-        echo "使用单线程编译以获取最详细日志"
-        # 关键修改：强制单线程+最详细日志输出
-        make -j1 V=sc
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-
-    - name: Flippy
-      id: flippy
-      uses: unifreq/openwrt_packit@master
-      env:
-        OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
-        SELECT_PACKITPATH: openwrt_packit
-        PACKAGE_SOC: s905d
-        KERNEL_VERSION_NAME: 6.1.y_6.12.y
-        WHOAMI: ophub
-
-    - name: Upload OpenWrt Firmware to Release
-      if: ${{ steps.flippy.outputs.status }} == 'success'
-      uses: ncipollo/release-action@main
-      with:
-        tag: openwrt_armsr-armv8_${{ env.FILE_DATE }}
-        artifacts: /opt/openwrt_packit/output/*.img
-        allowUpdates: true
-        token: ${{ secrets.GITHUB_TOKEN }}
-        body: |
-          This is OpenWrt firmware for Armv8
-          * Firmware information
-          Default IP: 192.168.1.1
-          Default username: root
-          Default password: password
-
-    - name: 删除工作流运行记录
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        retain_days: 0
-        keep_minimum_runs: 2
-
-    - name: 移除旧的发布版本
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      uses: dev-drprasad/delete-older-releases@master
-      with:
-        keep_latest: 3
-        delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: 清理临时文件和交换分区
-      if: always()
-      run: |
-        if [ -f "${{ env.SWAP_FILE }}" ]; then
-          sudo swapoff ${{ env.SWAP_FILE }}
-          sudo rm -f ${{ env.SWAP_FILE }}
-        fi
-        sudo rm -rf ${{ env.TEMP_DIR }}
