@@ -100,6 +100,13 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
+        
+    - name: 检查软件包依赖
+      run: |
+        cd openwrt
+        # 检查是否有冲突的软件包
+        make defconfig
+        make check V=s
 
     - name: 下载软件包到临时目录
       id: package
@@ -112,15 +119,16 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 编译固件（详细日志模式）
+    # 插入位置：在下载软件包和Flippy步骤之间
+    - name: 编译固件（极致详细日志模式）
       id: compile
       run: |
         cd openwrt
         export TMPDIR=${{ env.TEMP_DIR }}/tmp
         mkdir -p $TMPDIR
-        echo -e "$(nproc) thread compile"
-        # 使用详细模式编译，便于排查错误
-        make -j$(nproc) V=s || make -j1 V=s
+        echo "使用单线程编译以获取最详细日志"
+        # 关键修改：强制单线程+最详细日志输出
+        make -j1 V=sc
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
