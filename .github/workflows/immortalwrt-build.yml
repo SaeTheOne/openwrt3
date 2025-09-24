@@ -27,6 +27,9 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+  # 新增：临时文件目录设置
+  TEMP_DIR: /mnt/openwrt-temp
+  SWAP_FILE: /mnt/swapfile
 
 jobs:
   build:
@@ -39,44 +42,48 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4  # 推荐使用最新版本
 
-    - name: 初始化环境
+    - name: 初始化环境与磁盘空间管理
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
+        # 清理不必要的软件和缓存释放空间
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
         sudo rm -rf /usr/share/man/*  # 删除手册页
         sudo rm -rf /var/cache/apt/archives/*  # 清理 apt 缓存
-        sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile  # 增加交换分区
-        df -h  # 查看空间使用情况
-    - name: Free disk space
-    run: |
-      # 清理不必要的软件包
-      sudo apt-get autoremove -y
-      sudo apt-get clean
-      
-      # 清理Docker镜像（如果不需要）
-      sudo docker system prune -af
-      
-      # 扩展根分区（适用于GitHub Actions的Ubuntu环境）
-      sudo rm -rf /usr/share/dotnet
-      sudo rm -rf /opt/ghc
-      sudo rm -rf /usr/local/share/boost
-      sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        
+        # 安装必要依赖
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+        
+        # 配置/mnt分区作为临时目录
+        sudo mkdir -p ${{ env.TEMP_DIR }}
+        sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}
+        sudo chmod 755 ${{ env.TEMP_DIR }}
+        
+        # 创建并配置交换文件（在/mnt分区）
+        if [ ! -f "${{ env.SWAP_FILE }}" ]; then
+          sudo fallocate -l 16G ${{ env.SWAP_FILE }}
+          sudo chmod 600 ${{ env.SWAP_FILE }}  # 修复交换文件权限
+          sudo mkswap ${{ env.SWAP_FILE }}
+          sudo swapon ${{ env.SWAP_FILE }}
+        fi
+        
+        # 设置时区
+        sudo timedatectl set-timezone "$TZ"
+        
+        # 显示磁盘空间情况
+        df -h
+        free -h
 
-    - name: 克隆源码
-      working-directory: /workdir
+    - name: 克隆源码到临时目录
+      working-directory: ${{ env.TEMP_DIR }}
       run: |
         df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        ln -sf ${{ env.TEMP_DIR }}/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: 加载自定义软件源
       run: |
@@ -99,10 +106,13 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: 下载软件包
+    - name: 下载软件包到临时目录
       id: package
       run: |
         cd openwrt
+        # 配置编译缓存到临时目录
+        export CCACHE_DIR=${{ env.TEMP_DIR }}/.ccache
+        mkdir -p $CCACHE_DIR
         make defconfig
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
@@ -112,6 +122,9 @@ jobs:
       id: compile
       run: |
         cd openwrt
+        # 使用临时目录作为编译工作目录
+        export TMPDIR=${{ env.TEMP_DIR }}/tmp
+        mkdir -p $TMPDIR
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
@@ -158,3 +171,14 @@ jobs:
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 清理临时文件和交换分区
+      if: always()
+      run: |
+        # 卸载交换文件
+        if [ -f "${{ env.SWAP_FILE }}" ]; then
+          sudo swapoff ${{ env.SWAP_FILE }}
+          sudo rm -f ${{ env.SWAP_FILE }}
+        fi
+        # 删除临时目录
+        sudo rm -rf ${{ env.TEMP_DIR }}
