@@ -83,6 +83,19 @@ jobs:
         # 确保源码目录权限正确
         sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}/openwrt
 
+    # 新增步骤：删除冲突的内核补丁
+    - name: 移除冲突的内核补丁（修复补丁失败问题）
+      run: |
+        # 定位冲突补丁路径（根据日志中的补丁路径）
+        CONFLICT_PATCH="${{ env.TEMP_DIR }}/openwrt/target/linux/generic/backport-6.6/068-01-v6.7-netkit-bpf-Add-bpf-programmable-net-device.patch"
+        # 检查补丁是否存在，存在则删除或重命名
+        if [ -f "$CONFLICT_PATCH" ]; then
+          echo "发现冲突补丁，正在移除：$CONFLICT_PATCH"
+          sudo rm -f "$CONFLICT_PATCH"  # 直接删除补丁
+          # 或重命名（保留文件，避免后续误判）：sudo mv "$CONFLICT_PATCH" "$CONFLICT_PATCH.bak"
+        else
+          echo "未找到冲突补丁，跳过移除步骤"
+        fi
     - name: 加载自定义软件源
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
