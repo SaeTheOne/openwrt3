@@ -1,13 +1,8 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 #
-# File: .github/workflows/openwrt-builder.yml
-# Description: Build OpenWrt using GitHub Actions
-#
-# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
+# File: .github/workflows/immortalwrt-build.yml
+# Description: Build ImmortalWrt using GitHub Actions
 #
 
 name: immortalwrt Builder
@@ -18,7 +13,7 @@ on:
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: openwrt-24.10  # 请确认分支存在，如 v24.10.2
+  REPO_BRANCH: openwrt-24.10
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -27,46 +22,45 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
-  # 新增：临时文件目录设置
   TEMP_DIR: /mnt/openwrt-temp
   SWAP_FILE: /mnt/swapfile
 
 jobs:
   build:
     permissions:
-      contents: write  # 核心：允许创建标签和Release
-      packages: write  # 可选：如果需要发布到GitHub Packages
+      contents: write
+      packages: write
     runs-on: ubuntu-22.04
 
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4  # 推荐使用最新版本
+      uses: actions/checkout@v4
 
     - name: 初始化环境与磁盘空间管理
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        # 清理不必要的软件和缓存释放空间
+        # 清理系统空间
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
-        sudo rm -rf /usr/share/man/*  # 删除手册页
-        sudo rm -rf /var/cache/apt/archives/*  # 清理 apt 缓存
+        sudo rm -rf /usr/share/man/* /var/cache/apt/archives/*
         
         # 安装必要依赖
         sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
         
-        # 配置/mnt分区作为临时目录
+        # 配置/mnt分区权限和临时目录
+        sudo chmod -R 777 /mnt  # 确保/mnt分区有足够权限
         sudo mkdir -p ${{ env.TEMP_DIR }}
         sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}
-        sudo chmod 755 ${{ env.TEMP_DIR }}
+        sudo chmod -R 755 ${{ env.TEMP_DIR }}
         
-        # 创建并配置交换文件（在/mnt分区）
+        # 创建并配置交换文件
         if [ ! -f "${{ env.SWAP_FILE }}" ]; then
           sudo fallocate -l 16G ${{ env.SWAP_FILE }}
-          sudo chmod 600 ${{ env.SWAP_FILE }}  # 修复交换文件权限
+          sudo chmod 600 ${{ env.SWAP_FILE }}
           sudo mkswap ${{ env.SWAP_FILE }}
           sudo swapon ${{ env.SWAP_FILE }}
         fi
@@ -74,9 +68,11 @@ jobs:
         # 设置时区
         sudo timedatectl set-timezone "$TZ"
         
-        # 显示磁盘空间情况
+        # 显示系统状态
         df -h
         free -h
+        mount | grep /mnt
+        ls -ld /mnt
 
     - name: 克隆源码到临时目录
       working-directory: ${{ env.TEMP_DIR }}
@@ -84,6 +80,8 @@ jobs:
         df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf ${{ env.TEMP_DIR }}/openwrt $GITHUB_WORKSPACE/openwrt
+        # 确保源码目录权限正确
+        sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}/openwrt
 
     - name: 加载自定义软件源
       run: |
@@ -93,10 +91,7 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: 更新软件源
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: 安装软件源
-      run: cd openwrt && ./scripts/feeds install -a
+      run: cd openwrt && ./scripts/feeds clean && ./scripts/feeds update -af && ./scripts/feeds install -af
 
     - name: 加载自定义配置
       run: |
@@ -110,7 +105,6 @@ jobs:
       id: package
       run: |
         cd openwrt
-        # 配置编译缓存到临时目录
         export CCACHE_DIR=${{ env.TEMP_DIR }}/.ccache
         mkdir -p $CCACHE_DIR
         make defconfig
@@ -118,15 +112,15 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 编译固件
+    - name: 编译固件（详细日志模式）
       id: compile
       run: |
         cd openwrt
-        # 使用临时目录作为编译工作目录
         export TMPDIR=${{ env.TEMP_DIR }}/tmp
         mkdir -p $TMPDIR
         echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        # 使用详细模式编译，便于排查错误
+        make -j$(nproc) V=s || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -137,19 +131,19 @@ jobs:
       uses: unifreq/openwrt_packit@master
       env:
         OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
-        SELECT_PACKITPATH: openwrt_packit  # 根据需要设置
-        PACKAGE_SOC: s905d  # 或者具体的 SOC 名称，如 s905d
+        SELECT_PACKITPATH: openwrt_packit
+        PACKAGE_SOC: s905d
         KERNEL_VERSION_NAME: 6.1.y_6.12.y
-        WHOAMI: ophub  # 根据需要设置
+        WHOAMI: ophub
 
     - name: Upload OpenWrt Firmware to Release
-      if: ${{ steps.flippy.outputs.status }} == 'success'  # 确保 Flippy 步骤成功
+      if: ${{ steps.flippy.outputs.status }} == 'success'
       uses: ncipollo/release-action@main
       with:
         tag: openwrt_armsr-armv8_${{ env.FILE_DATE }}
-        artifacts: /opt/openwrt_packit/output/*.img  # 根据实际情况调整路径
+        artifacts: /opt/openwrt_packit/output/*.img
         allowUpdates: true
-        token: ${{ secrets.GITHUB_TOKEN }}  # 使用默认的 GitHub Token
+        token: ${{ secrets.GITHUB_TOKEN }}
         body: |
           This is OpenWrt firmware for Armv8
           * Firmware information
@@ -175,10 +169,8 @@ jobs:
     - name: 清理临时文件和交换分区
       if: always()
       run: |
-        # 卸载交换文件
         if [ -f "${{ env.SWAP_FILE }}" ]; then
           sudo swapoff ${{ env.SWAP_FILE }}
           sudo rm -f ${{ env.SWAP_FILE }}
         fi
-        # 删除临时目录
         sudo rm -rf ${{ env.TEMP_DIR }}
