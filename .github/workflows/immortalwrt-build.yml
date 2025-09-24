@@ -56,7 +56,20 @@ jobs:
         sudo rm -rf /var/cache/apt/archives/*  # 清理 apt 缓存
         sudo fallocate -l 10G /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile  # 增加交换分区
         df -h  # 查看空间使用情况
-    
+    - name: Free disk space
+    run: |
+      # 清理不必要的软件包
+      sudo apt-get autoremove -y
+      sudo apt-get clean
+      
+      # 清理Docker镜像（如果不需要）
+      sudo docker system prune -af
+      
+      # 扩展根分区（适用于GitHub Actions的Ubuntu环境）
+      sudo rm -rf /usr/share/dotnet
+      sudo rm -rf /opt/ghc
+      sudo rm -rf /usr/local/share/boost
+      sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
     - name: 克隆源码
       working-directory: /workdir
