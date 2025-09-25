@@ -1,8 +1,8 @@
 # .github/workflows/immortalwrt-build.yml
-# 适配 SaeTheOne/openwrt3 项目的 ImmortalWRT 编译工作流
-# 基于 v24.10.2 稳定分支，修复补丁冲突、优化/mnt临时目录、管理交换文件
+# SaeTheOne/openwrt3 项目专用 - 整合所有修复（补丁冲突+Rust编译+权限配置）
+# 适配 ImmortalWRT v24.10.2 稳定分支，目标设备 s905d
 
-name: ImmortalWRT Builder (v24.10.2)
+name: ImmortalWRT Builder (v24.10.2 - 修复版)
 
 on:
   workflow_dispatch:  # 手动触发编译
@@ -15,60 +15,52 @@ on:
       - 'diy-part2.sh'
 
 env:
-  # 项目核心配置（适配你的项目结构）
-  REPO_URL: https://github.com/immortalwrt/immortalwrt  # ImmortalWRT 源码地址
-  REPO_BRANCH: v24.10.2  # 稳定分支，已替换为 v24.10.2
-  FEEDS_CONF: feeds.conf.default  # 你的项目中的软件源配置文件
-  CONFIG_FILE: .config  # 你的项目中的编译配置文件
-  DIY_P1_SH: diy-part1.sh  # 你的项目中的自定义脚本1（修改源/添加包）
-  DIY_P2_SH: diy-part2.sh  # 你的项目中的自定义脚本2（修改配置）
-  # 输出与存储配置
-  UPLOAD_BIN_DIR: false  # 不上传完整bin目录（仅上传最终固件）
-  UPLOAD_FIRMWARE: true  # 上传固件到Artifacts
-  UPLOAD_RELEASE: true  # 上传固件到GitHub Release
-  # 临时目录与交换文件（使用/mnt分区）
-  TEMP_DIR: /mnt/openwrt-temp  # 编译临时目录（/mnt分区，空间充足）
-  SWAP_FILE: /mnt/swapfile     # 交换文件（放在/mnt，避免根分区空间不足）
-  # 其他环境
-  TZ: Asia/Shanghai  # 时区（避免时间相关编译问题）
+  # 项目核心配置（适配你的项目文件路径）
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: v24.10.2  # 锁定稳定分支
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  # 存储与输出配置
+  TEMP_DIR: /mnt/openwrt-temp  # /mnt分区临时目录（空间充足）
+  SWAP_FILE: /mnt/swapfile     # 16G交换文件（避免内存不足）
+  UPLOAD_RELEASE: true         # 上传到GitHub Release
+  UPLOAD_ARTIFACT: true        # 上传到工作流Artifacts
+  TZ: Asia/Shanghai            # 时区配置
 
 jobs:
   build:
     permissions:
       contents: write  # 允许创建Release和标签
-      packages: write  # 兼容GitHub Packages（可选）
-    runs-on: ubuntu-22.04  # 推荐使用Ubuntu 22.04（兼容性更好）
+    runs-on: ubuntu-22.04  # 兼容最佳的系统版本
 
     steps:
       ###########################################################################
-      # 步骤1：检出你的项目代码（包含.config、diy脚本等）
+      # 1. 检出项目代码（包含你的.config和DIY脚本）
       ###########################################################################
-      - name: 检出 SaeTheOne/openwrt3 项目代码
+      - name: 检出 SaeTheOne/openwrt3 代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # 仅拉取最新提交，加快速度
-          lfs: false      # 禁用LFS（无需大文件）
+          fetch-depth: 1
+          lfs: false
 
       ###########################################################################
-      # 步骤2：初始化编译环境（清理空间、安装依赖、配置/mnt权限、创建交换文件）
+      # 2. 初始化环境（清理空间+安装依赖+配置/mnt权限+创建交换文件）
       ###########################################################################
-      - name: 初始化环境（清理空间+安装依赖+配置权限）
+      - name: 初始化编译环境
         env:
-          DEBIAN_FRONTEND: noninteractive  # 禁用APT交互提示
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          # 1. 深度清理系统空间（释放根分区内存）
-          sudo rm -rf /etc/apt/sources.list.d/* \
-                      /usr/share/dotnet \
-                      /usr/local/lib/android \
-                      /opt/ghc \
-                      /opt/hostedtoolcache/CodeQL \
-                      /var/cache/apt/archives/* \
+          # 深度清理系统空间
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android \
+                      /opt/ghc /opt/hostedtoolcache/CodeQL /var/cache/apt/archives/* \
                       /usr/share/man/*
-          sudo docker image prune --all --force  # 清理Docker镜像
-          sudo apt-get -qq update && sudo apt-get -qq autoremove --purge -y && sudo apt-get -qq clean
+          sudo docker image prune --all --force
+          sudo apt-get update -qq && sudo apt-get autoremove --purge -y -qq && sudo apt-get clean -qq
 
-          # 2. 安装 ImmortalWRT 官方依赖（按文档要求，避免缺失工具）
-          sudo apt-get -qq install -y \
+          # 安装 ImmortalWRT 官方依赖（避免工具缺失）
+          sudo apt-get install -y -qq \
             ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
             bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk \
             gettext gcc-multilib g++-multilib git gnutls-dev gperf haveged help2man intltool \
@@ -79,233 +71,217 @@ jobs:
             python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig \
             texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
-          # 3. 配置/mnt分区权限（确保编译用户可读写）
-          sudo chmod -R 777 /mnt  # 开放/mnt全权限（仅编译环境安全）
-          sudo mkdir -p ${{ env.TEMP_DIR }}  # 创建临时目录
-          sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}  # 归属当前用户
-          sudo chmod -R 755 ${{ env.TEMP_DIR }}  # 目录权限
+          # 配置/mnt分区权限（确保可读写）
+          sudo chmod -R 777 /mnt
+          sudo mkdir -p ${{ env.TEMP_DIR }}
+          sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}
+          sudo chmod -R 755 ${{ env.TEMP_DIR }}
 
-          # 4. 创建16G交换文件（修复内存不足，权限设为600安全值）
+          # 创建16G交换文件（修复内存不足，权限600）
           if [ ! -f "${{ env.SWAP_FILE }}" ]; then
-            sudo fallocate -l 16G ${{ env.SWAP_FILE }}  # 分配16G空间
-            sudo chmod 600 ${{ env.SWAP_FILE }}          # 修复交换文件权限警告
-            sudo mkswap ${{ env.SWAP_FILE }}             # 格式化交换文件
-            sudo swapon ${{ env.SWAP_FILE }}             # 启用交换文件
+            sudo fallocate -l 16G ${{ env.SWAP_FILE }}
+            sudo chmod 600 ${{ env.SWAP_FILE }}
+            sudo mkswap ${{ env.SWAP_FILE }}
+            sudo swapon ${{ env.SWAP_FILE }}
           fi
 
-          # 5. 验证环境状态（查看磁盘/内存/交换空间）
-          echo "=== 磁盘空间状态 ==="
-          df -h
-          echo "=== 内存与交换空间状态 ==="
-          free -h
-          echo "=== /mnt分区挂载状态 ==="
-          mount | grep /mnt
+          # 验证环境状态
+          echo "=== 磁盘空间 ===" && df -h
+          echo "=== 内存/交换空间 ===" && free -h
+          echo "=== /mnt挂载状态 ===" && mount | grep /mnt
 
       ###########################################################################
-      # 步骤3：克隆 ImmortalWRT v24.10.2 源码到/mnt临时目录
+      # 3. 克隆 ImmortalWRT v24.10.2 源码（清理旧缓存）
       ###########################################################################
-      - name: 克隆 ImmortalWRT v24.10.2 源码
+      - name: 克隆 v24.10.2 源码
         working-directory: ${{ env.TEMP_DIR }}
         run: |
-          # 彻底删除旧源码（避免缓存导致的分支混乱）
+          # 彻底删除旧源码（避免分支混乱）
           sudo rm -rf openwrt
-          # 克隆指定稳定分支，--depth 1 加快速度
+          # 克隆稳定分支并验证
           git clone ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} --depth 1 openwrt
-          # 验证分支是否正确（防止拉取错误版本）
           cd openwrt
-          echo "=== 当前源码分支 ==="
-          git branch --show-current
-          echo "=== 当前源码最新提交 ==="
-          git log -1 --pretty=format:"%h - %s (%ci)"
-          # 创建软链接到项目目录（方便后续调用）
+          echo "=== 当前分支: $(git branch --show-current) ==="
+          echo "=== 最新提交: $(git log -1 --pretty=format:%h-%s) ==="
+          # 创建软链接到项目目录
           ln -sf ${{ env.TEMP_DIR }}/openwrt $GITHUB_WORKSPACE/openwrt
-          # 修复源码目录权限
+          # 修复源码权限
           sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}/openwrt
 
       ###########################################################################
-      # 步骤4：移除 v24.10.2 中残留的冲突补丁（068系列，解决补丁失败问题）
+      # 4. 删除冲突补丁（068系列，解决补丁应用失败）
       ###########################################################################
-      - name: 移除冲突补丁（068系列，彻底解决补丁失败）
+      - name: 移除068系列冲突补丁
         run: |
-          # 定位补丁目录（v24.10.2 的 backport-6.6 补丁目录）
           PATCH_DIR="${{ env.TEMP_DIR }}/openwrt/target/linux/generic/backport-6.6"
-          # 查找所有068系列补丁（通配符匹配，避免遗漏）
-          CONFLICT_PATCHES=$(find "$PATCH_DIR" -name "068-*.patch")
-          
-          if [ -n "$CONFLICT_PATCHES" ]; then
-            echo "=== 发现以下068系列冲突补丁，将全部删除 ==="
-            echo "$CONFLICT_PATCHES"
-            sudo rm -f $CONFLICT_PATCHES  # 彻底删除
+          if [ -d "$PATCH_DIR" ]; then
+            CONFLICT_PATCHES=$(find "$PATCH_DIR" -name "068-*.patch")
+            if [ -n "$CONFLICT_PATCHES" ]; then
+              echo "=== 删除冲突补丁: ===" && echo "$CONFLICT_PATCHES"
+              sudo rm -f $CONFLICT_PATCHES
+            else
+              echo "=== 未发现068系列补丁 ==="
+            fi
           else
-            echo "=== 未发现068系列冲突补丁，跳过 ==="
+            echo "=== 补丁目录不存在，跳过 ==="
           fi
 
       ###########################################################################
-      # 步骤5：加载你的项目自定义配置（软件源+DIY脚本1）
+      # 5. 加载自定义配置（软件源+DIY脚本1）
       ###########################################################################
-      - name: 加载自定义软件源与DIY脚本1
+      - name: 加载软件源与DIY脚本1
         run: |
-          # 1. 替换 ImmortalWRT 的软件源配置（使用你的 feeds.conf.default）
+          # 替换软件源配置
           if [ -f "${{ env.FEEDS_CONF }}" ]; then
-            echo "=== 替换软件源配置为项目中的 ${{ env.FEEDS_CONF }} ==="
             mv ${{ env.FEEDS_CONF }} $GITHUB_WORKSPACE/openwrt/feeds.conf.default
           fi
-          # 2. 执行DIY脚本1（修改源、添加第三方包等，使用你的项目脚本）
+          # 执行DIY脚本1（修改源/添加包）
           if [ -f "${{ env.DIY_P1_SH }}" ]; then
-            echo "=== 执行DIY脚本1: ${{ env.DIY_P1_SH }} ==="
             chmod +x ${{ env.DIY_P1_SH }}
             cd $GITHUB_WORKSPACE/openwrt
             $GITHUB_WORKSPACE/${{ env.DIY_P1_SH }}
           fi
 
       ###########################################################################
-      # 步骤6：更新并安装软件源（避免依赖缺失）
+      # 6. 更新并安装软件源（清理缓存+强制更新）
       ###########################################################################
-      - name: 更新与安装软件源
+      - name: 更新软件源
         run: |
           cd $GITHUB_WORKSPACE/openwrt
-          echo "=== 清理旧软件源缓存 ==="
-          ./scripts/feeds clean
-          echo "=== 更新所有软件源 ==="
-          ./scripts/feeds update -af  # -a全量更新，-f强制更新
-          echo "=== 安装所有软件源包 ==="
-          ./scripts/feeds install -af  # -a全量安装，-f强制覆盖
+          ./scripts/feeds clean  # 清理旧缓存
+          ./scripts/feeds update -af  # 全量更新
+          ./scripts/feeds install -af  # 全量安装
 
       ###########################################################################
-      # 步骤7：加载你的项目编译配置（.config + DIY脚本2）
+      # 7. 加载编译配置（.config+DIY脚本2）
       ###########################################################################
       - name: 加载编译配置与DIY脚本2
         run: |
-          # 1. 复制你的项目中的 .config 到源码目录
+          # 复制.config到源码目录
           if [ -f "${{ env.CONFIG_FILE }}" ]; then
-            echo "=== 加载项目编译配置: ${{ env.CONFIG_FILE }} ==="
             mv ${{ env.CONFIG_FILE }} $GITHUB_WORKSPACE/openwrt/.config
           fi
-          # 2. 执行DIY脚本2（修改.config、添加自定义文件等）
+          # 执行DIY脚本2（修改配置/添加文件）
           if [ -f "${{ env.DIY_P2_SH }}" ]; then
-            echo "=== 执行DIY脚本2: ${{ env.DIY_P2_SH }} ==="
             chmod +x ${{ env.DIY_P2_SH }}
             cd $GITHUB_WORKSPACE/openwrt
             $GITHUB_WORKSPACE/${{ env.DIY_P2_SH }}
           fi
-          # 3. 验证配置是否生效
-          echo "=== 当前编译配置摘要 ==="
+          # 验证配置
           cd $GITHUB_WORKSPACE/openwrt
-          grep -E '^CONFIG_TARGET_|^CONFIG_PACKAGE_' .config | head -20  # 显示前20行关键配置
+          echo "=== 核心配置摘要 ==="
+          grep -E '^CONFIG_TARGET_|^CONFIG_PACKAGE_luci' .config | head -20
 
       ###########################################################################
-      # 步骤8：检查软件包依赖（提前发现冲突，避免编译中断）
+      # 8. 检查软件包依赖（提前发现冲突）
       ###########################################################################
-      - name: 检查软件包依赖冲突
+      - name: 检查依赖冲突
         run: |
           cd $GITHUB_WORKSPACE/openwrt
-          echo "=== 生成默认配置并检查依赖 ==="
-          make defconfig  # 确保配置生效
-          make check V=s  # 详细输出依赖检查结果（V=s）
+          make defconfig  # 生成默认配置
+          make check V=s  # 详细检查依赖
 
       ###########################################################################
-      # 步骤9：下载软件包到/mnt临时目录（避免重复下载）
+      # 9. 下载软件包到/mnt（避免重复下载）
       ###########################################################################
-      - name: 下载软件包到/mnt临时目录
-        id: package
+      - name: 下载软件包
         run: |
           cd $GITHUB_WORKSPACE/openwrt
-          # 配置编译缓存到/mnt（加快后续编译）
+          # 配置编译缓存到/mnt
           export CCACHE_DIR=${{ env.TEMP_DIR }}/.ccache
           mkdir -p $CCACHE_DIR
-          # 生成最终配置
           make defconfig
-          # 多线程下载软件包（-j8，加快速度）
+          # 多线程下载
           make download -j8
-          # 清理无效的小文件（避免下载不完整导致编译失败）
-          find dl -size -1024c -exec echo "删除无效小文件: {}" \; -exec rm -f {} \;
-              # 新增步骤：修复 Rust 编译错误（禁用 download-ci-llvm）
-              
-      - name: 修复 Rust config.toml（禁用 download-ci-llvm）
-        run: |
-          # 定位 Rust 源码目录（版本号需与日志中的 rustc-1.85.0-src 匹配）
-          RUST_SRC_DIR="${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/host/rustc-1.85.0-src"
-          # 确认目录存在（避免路径错误）
-          if [ -d "$RUST_SRC_DIR" ]; then
-            echo "=== 找到 Rust 源码目录：$RUST_SRC_DIR ==="
-            # 进入 Rust 源码目录
-            cd "$RUST_SRC_DIR"
-            # 检查 config.toml 是否存在，不存在则创建；存在则追加配置
-            if [ -f "config.toml" ]; then
-              echo "=== 已存在 config.toml，添加 [llvm] 配置 ==="
-              # 追加禁用 download-ci-llvm 的配置（避免覆盖原有内容）
-              echo -e "\n[llvm]\ndownload-ci-llvm = false" >> config.toml
-            else
-              echo "=== 未找到 config.toml，创建并添加配置 ==="
-              # 新建 config.toml 并写入必要配置
-              echo "[llvm]" > config.toml
-              echo "download-ci-llvm = false" >> config.toml
-            fi
-            # 验证配置是否生效
-            echo "=== 验证 config.toml 配置 ==="
-            grep -A 2 "\[llvm\]" config.toml
-          else
-            echo "=== Rust 源码目录不存在，跳过修复（可能路径已变更） ==="
-            # 若路径不匹配，打印实际目录结构帮助排查
-            ls -l "${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/host/"
-          fi
-
+          # 清理无效小文件
+          find dl -size -1024c -exec echo "删除无效文件: {}" \; -exec rm -f {} \;
 
       ###########################################################################
-      # 步骤10：编译固件（单线程+极致详细日志，方便定位错误）
+      # 10. 编译固件（整合Rust修复：禁用download-ci-llvm）
       ###########################################################################
-      - name: 编译固件（详细日志模式）
+      - name: 编译固件（含Rust修复）
         id: compile
         run: |
           cd $GITHUB_WORKSPACE/openwrt
-          # 配置临时目录到/mnt（避免根分区空间不足）
+          # 配置临时目录
           export TMPDIR=${{ env.TEMP_DIR }}/tmp
           mkdir -p $TMPDIR
-          # 显示CPU核心数，合理分配线程（此处用单线程+j1，确保日志完整）
-          echo "=== 当前CPU核心数: $(nproc) ==="
-          echo "=== 开始单线程编译（V=sc 显示极致详细日志） ==="
-          make -j1 V=sc  # V=sc：输出最详细的编译日志，便于定位错误
-          # 编译成功后，记录设备名称和编译时间（用于Release标签）
-          echo "status=success" >> $GITHUB_OUTPUT
-          # 提取设备名称（从.config中匹配）
-          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-          if [ -s DEVICE_NAME ]; then
-            echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+
+          #######################################################################
+          # 关键修复：修改Rust config.toml（禁用download-ci-llvm）
+          #######################################################################
+          echo "=== 修复Rust编译配置 ==="
+          RUST_HOST_DIR="${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/host"
+          sleep 5  # 等待host目录生成
+          
+          if [ -d "$RUST_HOST_DIR" ]; then
+            # 通配符匹配Rust源码目录（适配任意版本）
+            RUST_SRC_DIR=$(find "$RUST_HOST_DIR" -maxdepth 1 -type d -name "rustc-*.0-src" | head -n 1)
+            if [ -n "$RUST_SRC_DIR" ]; then
+              echo "=== 找到Rust源码: $RUST_SRC_DIR ==="
+              cd "$RUST_SRC_DIR"
+              # 修改或添加[llvm]配置
+              if grep -q "\[llvm\]" config.toml 2>/dev/null; then
+                sed -i '/\[llvm\]/,/^$/s/^download-ci-llvm.*/download-ci-llvm = false/' config.toml
+              else
+                echo -e "\n[llvm]\ndownload-ci-llvm = false" >> config.toml
+              fi
+              # 验证修复结果
+              echo "=== Rust config.toml 验证 ==="
+              grep -A 2 "\[llvm\]" config.toml
+            else
+              echo "=== 未找到Rust源码目录，跳过修复 ==="
+              ls -l "$RUST_HOST_DIR"
+            fi
+          else
+            echo "=== Rust host目录不存在，跳过修复 ==="
+            ls -l "${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/"
           fi
-          # 记录编译时间（格式：YYYYMMDDHHMM）
+          # 回到源码根目录
+          cd $GITHUB_WORKSPACE/openwrt
+
+          #######################################################################
+          # 开始编译（单线程+详细日志）
+          #######################################################################
+          echo "=== CPU核心数: $(nproc) ==="
+          echo "=== 开始编译固件 ==="
+          make -j1 V=sc  # V=sc：输出完整日志，便于定位错误
+
+          # 记录编译信息
+          echo "status=success" >> $GITHUB_OUTPUT
+          # 提取设备名称
+          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+          # 记录编译时间
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-          # 显示编译输出目录结构
-          echo "=== 编译输出目录（bin/targets）结构 ==="
+          # 显示输出目录
+          echo "=== 编译输出目录 ==="
           ls -l $GITHUB_WORKSPACE/openwrt/bin/targets/
 
       ###########################################################################
-      # 步骤11：Flippy打包（生成ARMv8设备镜像，适配你的SOC）
+      # 11. Flippy打包（生成s905d设备镜像）
       ###########################################################################
-      - name: Flippy打包成设备镜像（s905d）
+      - name: Flippy打包镜像
         id: flippy
         uses: unifreq/openwrt_packit@master
         env:
-          # 定位根文件系统包（从编译输出中匹配）
           OPENWRT_ARMSR: $GITHUB_WORKSPACE/openwrt/bin/targets/*/*/*rootfs.tar.gz
-          SELECT_PACKITPATH: openwrt_packit  # 默认打包路径
-          PACKAGE_SOC: s905d  # 你的设备SOC（根据实际修改，如s905x3、s922x等）
-          KERNEL_VERSION_NAME: 6.1.y_6.12.y  # 内核版本（适配v24.10.2）
-          WHOAMI: ophub  # 打包标识（默认即可）
+          SELECT_PACKITPATH: openwrt_packit
+          PACKAGE_SOC: s905d  # 你的设备SOC，按需修改
+          KERNEL_VERSION_NAME: 6.1.y_6.12.y  # 适配v24.10.2的内核版本
+          WHOAMI: ophub
 
       ###########################################################################
-      # 步骤12：上传固件到GitHub Release（方便下载）
+      # 12. 上传镜像到GitHub Release
       ###########################################################################
-      - name: 上传固件到GitHub Release
+      - name: 上传到Release
         if: ${{ steps.flippy.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' }}
         uses: ncipollo/release-action@main
         with:
-          # Release标签（包含设备名+编译时间，避免重复）
           tag: ImmortalWRT_v24.10.2_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          # 上传Flippy打包后的镜像（输出路径固定）
           artifacts: /opt/openwrt_packit/output/*.img
-          allowUpdates: true  # 允许更新已存在的Release
-          token: ${{ secrets.GITHUB_TOKEN }}  # 使用GitHub默认Token（无需额外配置）
-          # Release描述（可根据你的固件修改默认账号密码）
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
           body: |
             ## ImmortalWRT v24.10.2 固件（${{ env.DEVICE_NAME }}）
             编译时间：${{ env.FILE_DATE }}
@@ -314,58 +290,52 @@ jobs:
             
             ### 初始配置
             - 默认IP：192.168.1.1
-            - 默认用户名：root
-            - 默认密码：password（若未修改DIY脚本）
+            - 用户名：root
+            - 密码：password（未修改则默认）
             
-            ### 注意事项
-            1. 刷写前请确认设备SOC与${{ env.PACKAGE_SOC }}匹配
+            ### 注意
+            1. 确认设备SOC与${{ env.PACKAGE_SOC }}匹配
             2. 首次登录建议修改密码
-            3. 若需其他功能，可通过OPKG安装
 
       ###########################################################################
-      # 步骤13：上传固件到Artifacts（工作流内临时下载）
+      # 13. 上传镜像到工作流Artifacts（临时下载）
       ###########################################################################
-      - name: 上传固件到Artifacts
-        if: ${{ steps.flippy.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true' }}
+      - name: 上传到Artifacts
+        if: ${{ steps.flippy.outputs.status == 'success' && env.UPLOAD_ARTIFACT == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: ImmortalWRT_Firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          path: /opt/openwrt_packit/output/*.img  # Flippy打包后的镜像路径
-          retention-days: 7  # 保留7天（可修改）
+          path: /opt/openwrt_packit/output/*.img
+          retention-days: 7  # 保留7天
 
       ###########################################################################
-      # 步骤14：清理工作流记录与旧Release（避免仓库臃肿）
+      # 14. 清理资源（交换文件+临时目录+旧记录）
       ###########################################################################
-      - name: 删除旧工作流记录
-        uses: Mattraks/delete-workflow-runs@main
-        with:
-          retain_days: 0  # 不保留旧记录（仅保留最新2条）
-          keep_minimum_runs: 2  # 最少保留2条记录
-
-      - name: 移除旧Release（仅保留最新3个）
-        if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
-        uses: dev-drprasad/delete-older-releases@master
-        with:
-          keep_latest: 3  # 保留最新3个Release
-          delete_tags: true  # 同时删除对应的标签
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      ###########################################################################
-      # 步骤15：清理临时文件与交换空间（释放资源）
-      ###########################################################################
-      - name: 清理临时文件与交换空间
-        if: always()  # 无论编译成功/失败，都执行清理
+      - name: 清理交换文件
+        if: always()
         run: |
-          # 1. 卸载并删除交换文件
           if [ -f "${{ env.SWAP_FILE }}" ]; then
             sudo swapoff ${{ env.SWAP_FILE }}
             sudo rm -f ${{ env.SWAP_FILE }}
-            echo "=== 交换文件已清理 ==="
           fi
-          # 2. 删除/mnt临时目录（释放空间）
+
+      - name: 清理临时目录
+        if: always()
+        run: |
           sudo rm -rf ${{ env.TEMP_DIR }}
-          echo "=== /mnt临时目录已清理 ==="
-          # 3. 验证清理结果
-          echo "=== 清理后磁盘空间 ==="
-          df -h
+          echo "=== 清理后磁盘空间 ===" && df -h
+
+      - name: 删除旧工作流记录
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          retain_days: 0
+          keep_minimum_runs: 2
+
+      - name: 删除旧Release（保留最新3个）
+        if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
+        uses: dev-drprasad/delete-older-releases@master
+        with:
+          keep_latest: 3
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
