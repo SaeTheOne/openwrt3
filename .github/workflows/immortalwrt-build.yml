@@ -219,6 +219,37 @@ jobs:
           make download -j8
           # 清理无效的小文件（避免下载不完整导致编译失败）
           find dl -size -1024c -exec echo "删除无效小文件: {}" \; -exec rm -f {} \;
+              # 新增步骤：修复 Rust 编译错误（禁用 download-ci-llvm）
+              
+      - name: 修复 Rust config.toml（禁用 download-ci-llvm）
+        run: |
+          # 定位 Rust 源码目录（版本号需与日志中的 rustc-1.85.0-src 匹配）
+          RUST_SRC_DIR="${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/host/rustc-1.85.0-src"
+          # 确认目录存在（避免路径错误）
+          if [ -d "$RUST_SRC_DIR" ]; then
+            echo "=== 找到 Rust 源码目录：$RUST_SRC_DIR ==="
+            # 进入 Rust 源码目录
+            cd "$RUST_SRC_DIR"
+            # 检查 config.toml 是否存在，不存在则创建；存在则追加配置
+            if [ -f "config.toml" ]; then
+              echo "=== 已存在 config.toml，添加 [llvm] 配置 ==="
+              # 追加禁用 download-ci-llvm 的配置（避免覆盖原有内容）
+              echo -e "\n[llvm]\ndownload-ci-llvm = false" >> config.toml
+            else
+              echo "=== 未找到 config.toml，创建并添加配置 ==="
+              # 新建 config.toml 并写入必要配置
+              echo "[llvm]" > config.toml
+              echo "download-ci-llvm = false" >> config.toml
+            fi
+            # 验证配置是否生效
+            echo "=== 验证 config.toml 配置 ==="
+            grep -A 2 "\[llvm\]" config.toml
+          else
+            echo "=== Rust 源码目录不存在，跳过修复（可能路径已变更） ==="
+            # 若路径不匹配，打印实际目录结构帮助排查
+            ls -l "${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/host/"
+          fi
+
 
       ###########################################################################
       # 步骤10：编译固件（单线程+极致详细日志，方便定位错误）
