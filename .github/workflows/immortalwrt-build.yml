@@ -1,329 +1,177 @@
-# .github/workflows/immortalwrt-build.yml
-# 内存优化终极版 - 解决11分钟内资源耗尽中断问题
-# 核心优化：降低内存峰值+禁用高内存组件+磁盘I/O优化
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+#
+# File: .github/workflows/openwrt-bulder.yml
+# Description: Build OpenWrt using GitHub Actions
+#
+# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
 
-name: ImmortalWRT Builder (内存优化版)
+name: OpenWrt Builder
 
 on:
+  repository_dispatch:
   workflow_dispatch:
-  push:
-    branches: [ main ]
-    paths:
-      - '.github/workflows/immortalwrt-build.yml'
-      - '.config'
-      - 'diy-part1.sh'
-      - 'diy-part2.sh'
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: v24.10.2
+  REPO_BRANCH: openwrt-24.10
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  # 关键：使用/mnt磁盘存储（非内存文件系统）
-  TEMP_DIR: /mnt/openwrt-temp
-  SWAP_FILE: /mnt/swapfile
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
-  UPLOAD_ARTIFACT: true
   TZ: Asia/Shanghai
 
 jobs:
   build:
     permissions:
-      contents: write
+      contents: write  # 核心：允许创建标签和Release
+      packages: write  # 可选：如果需要发布到GitHub Packages
     runs-on: ubuntu-22.04
-    # 延长超时到12小时（应对单线程编译耗时）
-    timeout-minutes: 720
 
+    
     steps:
-      ###########################################################################
-      # 1. 检出项目代码
-      ###########################################################################
-      - name: 检出项目代码
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          lfs: false
+    - name: 检出代码
+      uses: actions/checkout@main
 
-      ###########################################################################
-      # 2. 初始化环境（重点优化内存配置）
-      ###########################################################################
-      - name: 初始化编译环境（内存优化）
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          # 深度清理系统（释放20GB+空间）
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android \
-                      /opt/ghc /opt/hostedtoolcache/CodeQL /var/cache/apt/archives/* \
-                      /usr/share/man/* /usr/local/share/boost /var/lib/docker
-          sudo docker image prune --all --force
-          sudo apt-get update -qq && sudo apt-get autoremove --purge -y -qq && sudo apt-get clean -qq
+    - name: 初始化环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
 
-          # 安装必要依赖（精简版本）
-          sudo apt-get install -y -qq \
-            build-essential bzip2 ccache clang cmake cpio curl gawk gettext \
-            gcc-multilib g++-multilib git libncurses-dev libssl-dev make \
-            python3 python3-ply rsync squashfs-tools unzip wget zlib1g-dev zstd
+    - name: 克隆源码
+      working-directory: /workdir
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-          # 配置/mnt权限（确保磁盘读写）
-          sudo mkdir -p ${{ env.TEMP_DIR }}
-          sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}
-          sudo chmod -R 755 ${{ env.TEMP_DIR }}
+    - name: 加载自定义软件源
+      run: |
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
-          # 关键：25GB超大交换文件（应对内存峰值）
-          if [ ! -f "${{ env.SWAP_FILE }}" ]; then
-            sudo fallocate -l 25G ${{ env.SWAP_FILE }}
-            sudo chmod 600 ${{ env.SWAP_FILE }}
-            sudo mkswap ${{ env.SWAP_FILE }}
-            sudo swapon ${{ env.SWAP_FILE }}
-          fi
+    - name: 更新软件源
+      run: cd openwrt && ./scripts/feeds update -a
 
-          # 开启OOM日志监控（核心诊断工具）
-          sudo sysctl -w vm.panic_on_oom=0
-          sudo sysctl -w kernel.panic=0
-          echo "=== 初始系统状态 ==="
-          df -h && free -h && dmesg | grep -i "out of memory" || echo "无OOM记录"
+    - name: 安装软件源
+      run: cd openwrt && ./scripts/feeds install -a
 
-          # 后台实时监控资源（每10秒输出一次，捕捉峰值）
-          while true; do
-            echo "=== $(date +"%Y-%m-%d %H:%M:%S") 资源监控 ==="
-            free -h && top -bn1 | grep -E '(%Cpu|zstd|rustc|make)'
-            sleep 10
-          done &
-          echo "资源监控进程ID: $!"
+    - name: 加载自定义配置
+      run: |
+        [ -e files ] && mv files openwrt/files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
 
-      ###########################################################################
-      # 3. 克隆源码（使用磁盘存储）
-      ###########################################################################
-      - name: 克隆 ImmortalWRT v24.10.2 源码
-        working-directory: ${{ env.TEMP_DIR }}
-        run: |
-          sudo rm -rf openwrt
-          git clone ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} --depth 1 openwrt
-          cd openwrt
-          echo "=== 当前分支: $(git branch --show-current) ==="
-          ln -sf ${{ env.TEMP_DIR }}/openwrt $GITHUB_WORKSPACE/openwrt
-          sudo chown -R $USER:$GROUPS ${{ env.TEMP_DIR }}/openwrt
+    - name: 下载软件包
+      id: package
+      run: |
+        cd openwrt
+        make defconfig
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
 
-      ###########################################################################
-      # 4. 移除冲突补丁
-      ###########################################################################
-      - name: 移除068系列冲突补丁
-        run: |
-          PATCH_DIR="${{ env.TEMP_DIR }}/openwrt/target/linux/generic/backport-6.6"
-          if [ -d "$PATCH_DIR" ]; then
-            CONFLICT_PATCHES=$(find "$PATCH_DIR" -name "068-*.patch")
-            if [ -n "$CONFLICT_PATCHES" ]; then
-              echo "=== 删除冲突补丁: ===" && echo "$CONFLICT_PATCHES"
-              sudo rm -f $CONFLICT_PATCHES
-            fi
-          fi
+    - name: 编译固件
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-      ###########################################################################
-      # 5. 加载自定义配置
-      ###########################################################################
-      - name: 加载软件源与DIY脚本1
-        run: |
-          if [ -f "${{ env.FEEDS_CONF }}" ]; then
-            mv ${{ env.FEEDS_CONF }} $GITHUB_WORKSPACE/openwrt/feeds.conf.default
-          fi
-          if [ -f "${{ env.DIY_P1_SH }}" ]; then
-            chmod +x ${{ env.DIY_P1_SH }}
-            cd $GITHUB_WORKSPACE/openwrt
-            $GITHUB_WORKSPACE/${{ env.DIY_P1_SH }}
-          fi
+    - name: 检查空间使用情况
+      if: (!cancelled())
+      run: df -hT
 
-      ###########################################################################
-      # 6. 更新软件源（单线程避免内存峰值）
-      ###########################################################################
-      - name: 更新并安装软件源（单线程）
-        run: |
-          cd $GITHUB_WORKSPACE/openwrt
-          ./scripts/feeds clean
-          ./scripts/feeds update -a -j1  # 单线程更新，降低内存
-          ./scripts/feeds install -a -j1  # 单线程安装
+    - name: 上传bin目录
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
 
-      ###########################################################################
-      # 7. 加载编译配置
-      ###########################################################################
-      - name: 加载编译配置与DIY脚本2
-        run: |
-          if [ -f "${{ env.CONFIG_FILE }}" ]; then
-            mv ${{ env.CONFIG_FILE }} $GITHUB_WORKSPACE/openwrt/.config
-          fi
-          if [ -f "${{ env.DIY_P2_SH }}" ]; then
-            chmod +x ${{ env.DIY_P2_SH }}
-            cd $GITHUB_WORKSPACE/openwrt
-            $GITHUB_WORKSPACE/${{ env.DIY_P2_SH }}
-          fi
-          cd $GITHUB_WORKSPACE/openwrt
-          echo "=== 配置摘要 ==="
-          grep -E '^CONFIG_TARGET_|^CONFIG_PACKAGE_luci' .config | head -20
+    - name: 整理文件
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
 
-      ###########################################################################
-      # 8. 检查依赖冲突
-      ###########################################################################
-      - name: 检查依赖冲突
-        run: |
-          cd $GITHUB_WORKSPACE/openwrt
-          make defconfig
-          make check V=s
+    - name: 上传固件目录
+      uses: actions/upload-artifact@main
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
 
-      ###########################################################################
-      # 9. 下载软件包（关闭CCACHE，核心优化）
-      ###########################################################################
-      - name: 下载软件包（禁用CCACHE降低内存）
-        run: |
-          cd $GITHUB_WORKSPACE/openwrt
-          # 关键：关闭编译缓存，减少1-2GB内存占用
-          export CCACHE_DISABLE=1
-          export CCACHE_DIR=${{ env.TEMP_DIR }}/.ccache
-          mkdir -p $CCACHE_DIR
-          make defconfig
-          make download -j4  # 适度并行，避免下载时内存过高
-          find dl -size -1024c -exec rm -f {} \;
+    - name: 生成发布标签
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        touch release.txt
+        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
+        echo "status=success" >> $GITHUB_OUTPUT
 
-      ###########################################################################
-      # 10. 编译固件（内存优化核心步骤）
-      ###########################################################################
-      - name: 编译固件（内存优化模式）
-        id: compile
-        run: |
-          cd $GITHUB_WORKSPACE/openwrt
-          # 配置临时目录到磁盘
-          export TMPDIR=${{ env.TEMP_DIR }}/tmp
-          mkdir -p $TMPDIR
+    - name: 上传固件到发布版本
+      uses: softprops/action-gh-release@master
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
 
-          #######################################################################
-          # 第一步：触发make生成host目录（等待40秒确保生成）
-          #######################################################################
-          echo "=== 触发make生成host目录（40秒后中断） ==="
-          make -j1 V=sc &
-          MAKE_PID=$!
-          sleep 40  # 延长等待时间，确保Rust源码解压完成
-          if ps -p $MAKE_PID > /dev/null; then
-            sudo kill $MAKE_PID
-            wait $MAKE_PID 2>/dev/null
-            echo "=== 已中断make进程 ==="
-          fi
+    - name: 删除工作流运行记录
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        retain_days: 0
+        keep_minimum_runs: 2
 
-          #######################################################################
-          # 第二步：修改Rust配置（禁用高内存特性）
-          #######################################################################
-          echo "=== 修改Rust配置（最低内存模式） ==="
-          RUST_HOST_DIR="${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/host"
-          if [ -d "$RUST_HOST_DIR" ]; then
-            RUST_SRC_DIR=$(find "$RUST_HOST_DIR" -maxdepth 1 -type d -name "rustc-*.0-src" | head -n 1)
-            if [ -n "$RUST_SRC_DIR" ]; then
-              cd "$RUST_SRC_DIR"
-              # 1. 禁用预编译LLVM下载
-              if ! grep -q "download-ci-llvm = false" config.toml 2>/dev/null; then
-                if grep -q "\[llvm\]" config.toml 2>/dev/null; then
-                  sed -i '/\[llvm\]/,/^$/s/^download-ci-llvm.*/download-ci-llvm = false/' config.toml
-                else
-                  echo -e "\n[llvm]\ndownload-ci-llvm = false" >> config.toml
-                fi
-              fi
-              # 2. 强制Rust单线程编译（核心优化）
-              echo -e "\n[build]\njobs = 1" >> config.toml
-              # 验证配置
-              echo "=== Rust优化后配置 ==="
-              grep -A 3 -E "\[llvm\]|\[build\]" config.toml
-            else
-              echo "=== 未找到Rust源码 ===" && ls -l "$RUST_HOST_DIR" && exit 1
-            fi
-          else
-            echo "=== 未找到host目录 ===" && ls -l "${{ env.TEMP_DIR }}/openwrt/build_dir/target-aarch64_generic_musl/" && exit 1
-          fi
-
-          #######################################################################
-          # 第三步：激进优化ZSTD编译参数（内存占用砍半）
-          #######################################################################
-          echo "=== 优化ZSTD编译参数（最低内存模式） ==="
-          ZSTD_MAKEFILE="${{ env.TEMP_DIR }}/openwrt/build_dir/host/zstd-1.5.7/Makefile"
-          if [ -f "$ZSTD_MAKEFILE" ]; then
-            # 1. 禁用多线程
-            sed -i 's/ENABLE_MULTITHREAD=1/ENABLE_MULTITHREAD=0/' "$ZSTD_MAKEFILE"
-            # 2. 最低优化级别（-O0）
-            sed -i 's/-O2/-O0/' "$ZSTD_MAKEFILE"
-            # 3. 禁用字典生成（高内存特性）
-            sed -i 's/ENABLE_DICTBUILDER=1/ENABLE_DICTBUILDER=0/' "$ZSTD_MAKEFILE"
-            # 4. 禁用静态库压缩
-            sed -i 's/COMPRESS_STATIC_LIB=1/COMPRESS_STATIC_LIB=0/' "$ZSTD_MAKEFILE"
-            # 验证修改
-            grep -E 'ENABLE_MULTITHREAD|ENABLE_DICTBUILDER|COMPRESS_STATIC_LIB|-O' "$ZSTD_MAKEFILE"
-          fi
-
-          #######################################################################
-          # 第四步：开始编译（单线程+低资源模式）
-          #######################################################################
-          echo "=== 开始编译（单线程低内存模式） ==="
-          cd $GITHUB_WORKSPACE/openwrt
-          # 强制单线程编译所有组件
-          make -j1 V=sc
-
-          # 记录编译信息
-          echo "status=success" >> $GITHUB_OUTPUT
-          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-          ls -l $GITHUB_WORKSPACE/openwrt/bin/targets/
-
-      ###########################################################################
-      # 11. Flippy打包镜像
-      ###########################################################################
-      - name: Flippy打包镜像
-        id: flippy
-        uses: unifreq/openwrt_packit@master
-        env:
-          OPENWRT_ARMSR: $GITHUB_WORKSPACE/openwrt/bin/targets/*/*/*rootfs.tar.gz
-          SELECT_PACKITPATH: openwrt_packit
-          PACKAGE_SOC: s905d
-          KERNEL_VERSION_NAME: 6.1.y_6.12.y
-          WHOAMI: ophub
-
-      ###########################################################################
-      # 12. 上传到Release
-      ###########################################################################
-      - name: 上传到GitHub Release
-        if: ${{ steps.flippy.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' }}
-        uses: ncipollo/release-action@main
-        with:
-          tag: ImmortalWRT_v24.10.2_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          artifacts: /opt/openwrt_packit/output/*.img
-          allowUpdates: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          body: |
-            ## ImmortalWRT v24.10.2 固件（${{ env.DEVICE_NAME }}）
-            编译时间：${{ env.FILE_DATE }}
-            适配SOC：${{ env.PACKAGE_SOC }}
-            内核版本：${{ env.KERNEL_VERSION_NAME }}
-
-      ###########################################################################
-      # 13. 上传到Artifacts
-      ###########################################################################
-      - name: 上传到Artifacts
-        if: ${{ steps.flippy.outputs.status == 'success' && env.UPLOAD_ARTIFACT == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ImmortalWRT_Firmware_${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          path: /opt/openwrt_packit/output/*.img
-          retention-days: 7
-
-      ###########################################################################
-      # 14. 清理资源
-      ###########################################################################
-      - name: 清理资源
-        if: always()
-        run: |
-          # 输出OOM日志（若有）
-          echo "=== 编译结束，内核OOM日志 ==="
-          dmesg | grep -i "out of memory" || echo "无OOM记录"
-          # 清理交换文件和临时目录
-          if [ -f "${{ env.SWAP_FILE }}" ]; then
-            sudo swapoff ${{ env.SWAP_FILE }}
-            sudo rm -f ${{ env.SWAP_FILE }}
-          fi
-          sudo rm -rf ${{ env.TEMP_DIR }}
-          df -h
+    - name: 移除旧的发布版本
+      uses: dev-drprasad/delete-older-releases@master
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 3
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    # - name: Flippy
+    #   uses: unifreq/openwrt_packit@master
+    #   env:
+    #     OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
+    #     PACKAGE_SOC: SCRIPT_S905D
+    #     KERNEL_VERSION_NAME: 6.1.y_6.12.y
+          
+    # - name: 上传编译结果到 Artifact (Upload build result to Artifact)
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: ImmortalWrt-build-result
+    #     path: ImmortalWrt/bin/targets
