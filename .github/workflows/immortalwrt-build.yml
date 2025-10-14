@@ -1,16 +1,4 @@
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-#
-# File: .github/workflows/openwrt-bulder.yml
-# Description: Build OpenWrt using GitHub Actions
-#
-# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-
-name: immortalWrt Builder
+name: immortalwrt Builder
 
 on:
   repository_dispatch:
@@ -31,8 +19,8 @@ env:
 jobs:
   build:
     permissions:
-      contents: write  # 核心：允许创建标签和Release
-      packages: write  # 可选：如果需要发布到GitHub Packages
+      contents: write
+      packages: write
     runs-on: ubuntu-22.04
 
     
@@ -69,14 +57,7 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: 更新软件源
-      run:  |
-        cd openwrt && ./scripts/feeds update -a
-        rm -rf feeds/luci/applications/luci-app-mosdns
-        rm -rf feeds/packages/net/{alist,adguardhome,mosdns,xray*,v2ray*,v2ray*,sing*,smartdns}
-        rm -rf feeds/packages/utils/v2dat
-        rm -rf feeds/packages/lang/golang
-        git clone https://github.com/kenzok8/golang feeds/packages/lang/golang
-        ./scripts/feeds install -a 
+      run: cd openwrt && ./scripts/feeds update -a
 
     - name: 安装软件源
       run: cd openwrt && ./scripts/feeds install -a
@@ -108,33 +89,37 @@ jobs:
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        
+    - name: Flippy打包
+      id: flippy_pack
+      uses: unifreq/openwrt_packit@master
+      env:
+        OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
+        PACKAGE_SOC: SCRIPT_S905D
+        KERNEL_VERSION_NAME: 6.1.y_6.12.y
+        # 指定打包输出目录
+        OUTPUT_PATH: ${{ github.workspace }}/flippy_output
+          
+    - name: 检查Flippy打包结果
+      run: |
+        echo "查看打包输出目录内容："
+        ls -l ${{ github.workspace }}/flippy_output
+        # 确保打包文件存在
+        if [ -z "$(ls -A ${{ github.workspace }}/flippy_output)" ]; then
+          echo "Flippy打包失败，输出目录为空"
+          exit 1
+        fi
 
     - name: 检查空间使用情况
       if: (!cancelled())
       run: df -hT
 
-    - name: 上传bin目录
+    - name: 上传Flippy打包文件到Artifact
       uses: actions/upload-artifact@main
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      if: steps.flippy_pack.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
-
-    - name: 整理文件
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: 上传固件目录
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
-      with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
+        name: Flippy_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${{ github.workspace }}/flippy_output/*
 
     - name: 生成发布标签
       id: tag
@@ -142,10 +127,10 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
+        echo "📦 Flippy打包固件" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 上传固件到发布版本
+    - name: 上传Flippy打包文件到发布版本
       uses: softprops/action-gh-release@master
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
@@ -153,7 +138,7 @@ jobs:
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
+        files: ${{ github.workspace }}/flippy_output/*
 
     - name: 删除工作流运行记录
       uses: Mattraks/delete-workflow-runs@main
@@ -169,16 +154,3 @@ jobs:
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    # - name: Flippy
-    #   uses: unifreq/openwrt_packit@master
-    #   env:
-    #     OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
-    #     PACKAGE_SOC: SCRIPT_S905D
-    #     KERNEL_VERSION_NAME: 6.1.y_6.12.y
-          
-    # - name: 上传编译结果到 Artifact (Upload build result to Artifact)
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: ImmortalWrt-build-result
-    #     path: ImmortalWrt/bin/targets
