@@ -17,8 +17,12 @@ env:
   TZ: Asia/Shanghai
   DEVICE_MODEL: S905D
   PACKAGE_OUTPUT_PATH: ${{ github.workspace }}/flippy_output
-  # 新增：日志文件路径
   BUILD_LOG_FILE: ${{ github.workspace }}/openwrt/build.log
+  # 指定需要优先单线程编译的包
+  CUSTOM_PACKAGES: "luci-app-amlogic luci-app-nikki luci-app-momo luci-app-docker luci-app-homeproxy luci-app-openclash luci-app-passwall"
+  # 线程配置
+  CUSTOM_THREADS: 1  # 自定义包单线程
+  ALL_THREADS: 4     # 其余部分多线程
 
 jobs:
   build:
@@ -47,16 +51,8 @@ jobs:
         
     - name: 清理冗余文件释放磁盘空间
       run: |
-        # 删除 Ubuntu 预装的大体积无用软件
-        sudo rm -rf /usr/share/dotnet          # 移除 .NET（约 6GB）
-        sudo rm -rf /var/lib/docker            # 移除 Docker（约 8GB）
-        sudo rm -rf /opt/ghc                   # 移除 GHC（约 2GB）
-        sudo rm -rf /usr/local/share/boost     # 移除 Boost（约 1GB）
-        sudo rm -rf /usr/lib/jvm               # 移除 JVM（约 2GB）
-        # 清理 apt 缓存和临时文件
-        sudo apt clean
-        sudo rm -rf /var/cache/apt/archives/*
-        # 查看清理后的剩余空间
+        sudo rm -rf /usr/share/dotnet /var/lib/docker /opt/ghc /usr/local/share/boost /usr/lib/jvm
+        sudo apt clean && sudo rm -rf /var/cache/apt/archives/*
         df -h
           
     - name: 克隆源码
@@ -70,8 +66,7 @@ jobs:
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: 更新软件源
       run: cd openwrt && ./scripts/feeds update -a
@@ -84,36 +79,54 @@ jobs:
         [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
         echo "CONFIG_TARGET_armvirt=y" >> .config
         echo "CONFIG_TARGET_armvirt_64=y" >> .config
         echo "CONFIG_TARGET_armvirt_64_DEVICE_generic=y" >> .config
+        # 确保指定的自定义包已启用（避免拼写错误导致漏编译）
+        for pkg in ${{ env.CUSTOM_PACKAGES }}; do
+          echo "CONFIG_PACKAGE_$pkg=y" >> .config
+        done
 
     - name: 下载软件包
       id: package
       run: |
         cd openwrt
         make defconfig
-        make download -j8
+        make download -j$ALL_THREADS
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 编译固件（带日志保存）
-      id: compile
+    - name: 单线程编译指定自定义包
+      id: compile-custom
       run: |
         cd openwrt
-        echo "先单独多线程编译 libdeflate"
-        # 单独编译libdeflate并记录日志
-        make package/libs/libdeflate/compile -j4 V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
+        echo "开始单线程编译指定自定义包：${{ env.CUSTOM_PACKAGES }}"
+        # 逐个编译指定包（单线程，便于定位单个包的错误）
+        for pkg in ${{ env.CUSTOM_PACKAGES }}; do
+          echo "===== 开始编译 $pkg ====="
+          make package/$pkg/compile -j$CUSTOM_THREADS V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
+          # 若单个包编译失败，立即终止并标记状态
+          if [ $? -ne 0 ]; then
+            echo "$pkg 编译失败，日志已保存"
+            echo "compile_status=failed" >> $GITHUB_ENV
+            exit 1
+          fi
+        done
+        echo "所有指定自定义包编译完成"
+
+    - name: 多线程编译剩余所有组件
+      id: compile-all
+      if: env.compile_status != 'failed'
+      run: |
+        cd openwrt
+        echo "开始多线程编译剩余所有组件（$ALL_THREADS 线程）"
+        # 编译整个固件（会自动跳过已编译的自定义包）
+        make -j$ALL_THREADS V=1 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
         
-        echo "继续单线程编译剩余部分"
-        # 主编译过程同时输出到屏幕和日志文件
-        make -j1 V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
-        
-        # 捕获编译状态
+        # 捕获整体编译状态
         if [ $? -ne 0 ]; then
-          echo "编译失败，日志已保存"
+          echo "剩余组件编译失败，日志已保存"
           echo "compile_status=failed" >> $GITHUB_ENV
         else
           echo "compile_status=success" >> $GITHUB_ENV
