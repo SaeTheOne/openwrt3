@@ -131,7 +131,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传Flippy打包文件到发布版本
-      uses: softprops/action-gh-release@main
+      uses: softprops/action-gh-release@master
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
