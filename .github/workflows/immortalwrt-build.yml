@@ -17,6 +17,8 @@ env:
   TZ: Asia/Shanghai
   DEVICE_MODEL: S905D
   PACKAGE_OUTPUT_PATH: ${{ github.workspace }}/flippy_output
+  # 新增：日志文件路径
+  BUILD_LOG_FILE: ${{ github.workspace }}/openwrt/build.log
 
 jobs:
   build:
@@ -54,7 +56,7 @@ jobs:
         # 清理 apt 缓存和临时文件
         sudo apt clean
         sudo rm -rf /var/cache/apt/archives/*
-        # 查看清理后的剩余空间（方便调试，可保留）
+        # 查看清理后的剩余空间
         df -h
           
     - name: 克隆源码
@@ -97,28 +99,49 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 编译固件
+    - name: 编译固件（带日志保存）
       id: compile
       run: |
         cd openwrt
-        echo "先单独多线程编译 libdeflate（减少核心依赖耗时）"
-        # 单独给 libdeflate 开4线程编译（runner 通常有2-4核，-j4 较安全）
-        make package/libs/libdeflate/compile -j4 V=s
-        echo "继续单线程编译剩余部分（保留详细日志）
-        # 修改为单线程编译并输出详细日志make -j1 V=s
-        make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        echo "先单独多线程编译 libdeflate"
+        # 单独编译libdeflate并记录日志
+        make package/libs/libdeflate/compile -j4 V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
+        
+        echo "继续单线程编译剩余部分"
+        # 主编译过程同时输出到屏幕和日志文件
+        make -j1 V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
+        
+        # 捕获编译状态
+        if [ $? -ne 0 ]; then
+          echo "编译失败，日志已保存"
+          echo "compile_status=failed" >> $GITHUB_ENV
+        else
+          echo "compile_status=success" >> $GITHUB_ENV
+          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        fi
 
-    - name: Clean up temporary files after compilation
+    - name: 保存编译日志（无论成功/失败）
+      uses: actions/upload-artifact@main
+      if: always()
+      with:
+        name: build-logs-${{ env.DEVICE_MODEL }}-${{ env.FILE_DATE || 'failed' }}
+        path: |
+          ${{ env.BUILD_LOG_FILE }}
+          openwrt/.config
+          openwrt/feeds.conf.default
+
+    - name: 编译失败时终止后续步骤
+      if: env.compile_status == 'failed'
+      run: |
+        echo "编译失败，已保存日志，终止后续流程"
+        exit 1
+
+    - name: 清理编译临时文件
       run: |
         cd openwrt
-        # 删除编译过程中生成的中间目标文件（约 5-10GB）
         make clean
-        # 删除下载的源码包缓存（可选，若后续需重新编译可保留）
-        # rm -rf dl/
         df -h
     
     - name: Flippy打包（适配immoralwrt文件名）
