@@ -1,4 +1,4 @@
-name: immortalwrt Builder
+name: immortalwrt Builder for S905D
 
 on:
   repository_dispatch:
@@ -15,9 +15,7 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
-  # 设备型号
   DEVICE_MODEL: S905D
-  # 统一输出路径变量（修正原始代码路径不一致问题）
   PACKAGE_OUTPUT_PATH: ${{ github.workspace }}/flippy_output
 
 jobs:
@@ -29,7 +27,7 @@ jobs:
 
     steps:
     - name: 检出代码
-      uses: actions/checkout@main  # 还原为 main 分支
+      uses: actions/checkout@main
 
     - name: 初始化环境
       env:
@@ -72,7 +70,6 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 添加 S905D 设备配置
         echo "CONFIG_TARGET_armvirt=y" >> .config
         echo "CONFIG_TARGET_armvirt_64=y" >> .config
         echo "CONFIG_TARGET_armvirt_64_DEVICE_generic=y" >> .config
@@ -97,12 +94,13 @@ jobs:
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
         
-    - name: Flippy打包
+    - name: Flippy打包（适配immoralwrt文件名）
       id: flippy_pack
       uses: unifreq/openwrt_packit@master
       env:
-        OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
-        PACKAGE_SOC: s905d  # 明确S905D芯片
+        # 关键修改：匹配以immoralwrt开头的rootfs文件
+        OPENWRT_ARMSR: openwrt/bin/targets/*/*/*immoralwrt*rootfs.tar.gz
+        PACKAGE_SOC: s905d
         KERNEL_VERSION_NAME: 6.1.y_6.12.y
         OUTPUT_PATH: ${{ env.PACKAGE_OUTPUT_PATH }}
         EXTRA_ARGS: --with-dtb=meson-gxl-s905d-p230.dtb,meson-gxl-s905d-p241.dtb
@@ -117,7 +115,7 @@ jobs:
         fi
         
     - name: 上传Flippy打包文件到Artifact
-      uses: actions/upload-artifact@main  # 还原为 main 分支
+      uses: actions/upload-artifact@main
       if: steps.flippy_pack.outputs.status == 'success' && !cancelled()
       with:
         name: Flippy_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
@@ -129,11 +127,11 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        echo "📦 Flippy打包固件" >> release.txt
+        echo "📦 Flippy打包固件（immoralwrt）" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传Flippy打包文件到发布版本
-      uses: softprops/action-gh-release@main  # 还原为 main 分支
+      uses: softprops/action-gh-release@main
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -147,7 +145,7 @@ jobs:
       run: df -hT
 
     - name: 删除工作流运行记录
-      uses: Mattraks/delete-workflow-runs@main  # 还原为 main 分支
+      uses: Mattraks/delete-workflow-runs@main
       with:
         retain_days: 0
         keep_minimum_runs: 2
