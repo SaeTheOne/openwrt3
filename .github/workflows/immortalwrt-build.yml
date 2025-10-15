@@ -18,11 +18,10 @@ env:
   DEVICE_MODEL: S905D
   PACKAGE_OUTPUT_PATH: ${{ github.workspace }}/flippy_output
   BUILD_LOG_FILE: ${{ github.workspace }}/openwrt/build.log
-  # 指定需要优先单线程编译的包
+  # 指定需要优先单线程编译的包（修正了luci-app-docke为luci-app-docker）
   CUSTOM_PACKAGES: "luci-app-amlogic luci-app-nikki luci-app-momo luci-app-docker luci-app-homeproxy luci-app-openclash luci-app-passwall"
-  # 线程配置
   CUSTOM_THREADS: 1  # 自定义包单线程
-  ALL_THREADS: 4     # 其余部分多线程
+  ALL_THREADS: 4     # 工具链/核心组件多线程
 
 jobs:
   build:
@@ -42,7 +41,8 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        # 补充工具链依赖（新增zstd，immortalwrt官方文档要求）
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -80,33 +80,46 @@ jobs:
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
+        # 确保目标架构配置正确（AArch64 + Musl C库）
         echo "CONFIG_TARGET_armvirt=y" >> .config
         echo "CONFIG_TARGET_armvirt_64=y" >> .config
         echo "CONFIG_TARGET_armvirt_64_DEVICE_generic=y" >> .config
-        # 确保指定的自定义包已启用（避免拼写错误导致漏编译）
+        echo "CONFIG_LIBC=musl" >> .config  # 明确指定Musl C库（避免工具链错乱）
+        # 确保指定的自定义包已启用
         for pkg in ${{ env.CUSTOM_PACKAGES }}; do
           echo "CONFIG_PACKAGE_$pkg=y" >> .config
         done
+        # 生成最终配置（避免配置冲突）
+        make defconfig 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
 
     - name: 下载软件包
       id: package
       run: |
         cd openwrt
-        make defconfig
         make download -j$ALL_THREADS
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
+
+    - name: 多线程构建 target 工具链（关键修复）
+      run: |
+        cd openwrt
+        echo "开始构建 AArch64 交叉编译工具链（$ALL_THREADS 线程）"
+        # 先构建工具链（toolchain），生成ld-musl等核心文件
+        make toolchain/compile -j$ALL_THREADS V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
+        # 工具链构建失败直接终止
+        if [ $? -ne 0 ]; then
+          echo "工具链构建失败，无法继续编译自定义包"
+          exit 1
+        fi
 
     - name: 单线程编译指定自定义包
       id: compile-custom
       run: |
         cd openwrt
         echo "开始单线程编译指定自定义包：${{ env.CUSTOM_PACKAGES }}"
-        # 逐个编译指定包（单线程，便于定位单个包的错误）
         for pkg in ${{ env.CUSTOM_PACKAGES }}; do
           echo "===== 开始编译 $pkg ====="
           make package/$pkg/compile -j$CUSTOM_THREADS V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
-          # 若单个包编译失败，立即终止并标记状态
           if [ $? -ne 0 ]; then
             echo "$pkg 编译失败，日志已保存"
             echo "compile_status=failed" >> $GITHUB_ENV
@@ -114,22 +127,19 @@ jobs:
           fi
         done
         echo "所有指定自定义包编译完成"
+        echo "compile_status=success" >> $GITHUB_ENV
 
     - name: 多线程编译剩余所有组件
       id: compile-all
-      if: env.compile_status != 'failed'
+      if: env.compile_status == 'success'
       run: |
         cd openwrt
         echo "开始多线程编译剩余所有组件（$ALL_THREADS 线程）"
-        # 编译整个固件（会自动跳过已编译的自定义包）
         make -j$ALL_THREADS V=1 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
-        
-        # 捕获整体编译状态
         if [ $? -ne 0 ]; then
           echo "剩余组件编译失败，日志已保存"
           echo "compile_status=failed" >> $GITHUB_ENV
         else
-          echo "compile_status=success" >> $GITHUB_ENV
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -157,7 +167,7 @@ jobs:
         make clean
         df -h
     
-    - name: Flippy打包（适配immoralwrt文件名）
+    - name: Flippy打包（适配immortalwrt文件名）
       id: flippy_pack
       uses: unifreq/openwrt_packit@master
       env:
@@ -189,7 +199,7 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        echo "📦 Flippy打包固件（immoralwrt）" >> release.txt
+        echo "📦 Flippy打包固件（immortalwrt）" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传Flippy打包文件到发布版本
