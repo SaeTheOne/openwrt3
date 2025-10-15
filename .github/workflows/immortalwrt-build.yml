@@ -1,4 +1,4 @@
-name: immortalwrt Builder for S905D
+name: immortalwrt Builder
 
 on:
   repository_dispatch:
@@ -89,7 +89,7 @@ jobs:
         cd openwrt
         echo "使用单线程详细模式编译"
         # 修改为单线程编译并输出详细日志
-        make -j$(nproc) V=s
+        make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
