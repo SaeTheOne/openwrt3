@@ -1,4 +1,4 @@
-name: immortalwrt Builder for S905D
+name: immortalwrt Builder
 
 on:
   repository_dispatch:
@@ -17,7 +17,7 @@ env:
   TZ: Asia/Shanghai
   # 设备型号
   DEVICE_MODEL: S905D
-  # 统一输出路径变量
+  # 统一输出路径变量（修正原始代码路径不一致问题）
   PACKAGE_OUTPUT_PATH: ${{ github.workspace }}/flippy_output
 
 jobs:
@@ -26,40 +26,24 @@ jobs:
       contents: write
       packages: write
     runs-on: ubuntu-22.04
-    timeout-minutes: 480
 
     steps:
     - name: 检出代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@main  # 还原为 main 分支
 
     - name: 初始化环境
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        # 清理不必要的预装软件以释放空间
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
-        sudo apt-get -qq update
-        sudo apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        sudo apt-get -qq autoremove --purge
-        sudo apt-get -qq clean
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
-        # 创建工作目录
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
-        # 显示磁盘空间
-        df -hT
-
-    - name: 缓存编译依赖
-      uses: actions/cache@v3
-      with:
-        path: |
-          /workdir/openwrt/dl
-          /workdir/openwrt/feeds
-          ~/.ccache
-        key: ${{ runner.os }}-openwrt-${{ env.REPO_BRANCH }}-${{ env.DEVICE_MODEL }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-openwrt-${{ env.REPO_BRANCH }}-${{ env.DEVICE_MODEL }}-
 
     - name: 克隆源码
       working-directory: /workdir
@@ -71,7 +55,7 @@ jobs:
     - name: 加载自定义软件源
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        [ -x $DIY_P1_SH ] || chmod +x $DIY_P1_SH
+        chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
@@ -85,10 +69,10 @@ jobs:
       run: |
         [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        [ -x $DIY_P2_SH ] || chmod +x $DIY_P2_SH
+        chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 确保配置适合 S905D
+        # 添加 S905D 设备配置
         echo "CONFIG_TARGET_armvirt=y" >> .config
         echo "CONFIG_TARGET_armvirt_64=y" >> .config
         echo "CONFIG_TARGET_armvirt_64_DEVICE_generic=y" >> .config
@@ -98,8 +82,7 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        make download -j$(nproc)
-        # 清理无效文件
+        make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
@@ -108,72 +91,49 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # 优化编译重试逻辑
-        make -j$(nproc) || {
-          echo "首次编译失败，尝试单线程编译并输出详细日志"
-          make -j1 V=s
-        }
+        make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
-        # 设置设备名称变量
-        echo "DEVICE_NAME=_${{ env.DEVICE_MODEL }}" >> $GITHUB_ENV
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
         
-    - name: Flippy打包 (适配 S905D)
+    - name: Flippy打包
       id: flippy_pack
       uses: unifreq/openwrt_packit@master
       env:
         OPENWRT_ARMSR: openwrt/bin/targets/*/*/*rootfs.tar.gz
-        # 明确指定 S905D 芯片
-        PACKAGE_SOC: s905d
-        # 选择适合 S905D 的稳定内核版本
-        KERNEL_VERSION_NAME: 6.1.y_6.6.y
-        # 输出路径
+        PACKAGE_SOC: s905d  # 明确S905D芯片
+        KERNEL_VERSION_NAME: 6.1.y_6.12.y
         OUTPUT_PATH: ${{ env.PACKAGE_OUTPUT_PATH }}
-        # 为 S905D 添加额外的打包参数
         EXTRA_ARGS: --with-dtb=meson-gxl-s905d-p230.dtb,meson-gxl-s905d-p241.dtb
           
     - name: 检查Flippy打包结果
       run: |
-        echo "查看 S905D 打包输出目录内容："
+        echo "查看打包输出目录内容："
         ls -l ${{ env.PACKAGE_OUTPUT_PATH }}
-        # 确保打包文件存在
         if [ -z "$(ls -A ${{ env.PACKAGE_OUTPUT_PATH }} 2>/dev/null)" ]; then
-          echo "S905D 固件打包失败，输出目录为空"
+          echo "Flippy打包失败，输出目录为空"
           exit 1
         fi
         
     - name: 上传Flippy打包文件到Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@main  # 还原为 main 分支
       if: steps.flippy_pack.outputs.status == 'success' && !cancelled()
       with:
         name: Flippy_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.PACKAGE_OUTPUT_PATH }}/*
-        retention-days: 5
 
-    - name: 生成发布标签和说明
+    - name: 生成发布标签
       id: tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        RELEASE_TAG="${{ env.DEVICE_MODEL }}-$(date +"%Y.%m.%d-%H%M")"
-        echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
-        
-        # 生成详细的发布说明
-        echo "📦 ImmortalWrt 固件发布: $RELEASE_TAG" > release.txt
-        echo "为 ${{ env.DEVICE_MODEL }} 盒子构建" >> release.txt
-        echo "基于 $REPO_BRANCH 分支" >> release.txt
-        echo "" >> release.txt
-        echo "🔧 固件信息" >> release.txt
-        echo "- 默认IP: 192.168.1.1" >> release.txt
-        echo "- 默认用户名: root" >> release.txt
-        echo "- 默认密码: password" >> release.txt
-        echo "" >> release.txt
-        echo "📋 包含内核版本: 6.1.y 和 6.6.y" >> release.txt
-        echo "📌 适用设备: 所有基于 S905D 芯片的盒子" >> release.txt
-        
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        touch release.txt
+        echo "📦 Flippy打包固件" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传Flippy打包文件到发布版本
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@main  # 还原为 main 分支
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -186,14 +146,14 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
-    - name: 删除旧工作流记录
-      uses: Mattraks/delete-workflow-runs@v2
+    - name: 删除工作流运行记录
+      uses: Mattraks/delete-workflow-runs@main  # 还原为 main 分支
       with:
-        retain_days: 1
+        retain_days: 0
         keep_minimum_runs: 2
 
     - name: 移除旧的发布版本
-      uses: dev-drprasad/delete-older-releases@v0.3.2
+      uses: dev-drprasad/delete-older-releases@master
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       with:
         keep_latest: 3
