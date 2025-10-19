@@ -78,7 +78,14 @@ jobs:
           KERNEL_SOURCE: local
           KERNEL_DIR: ${{ github.workspace }}/flippy_kernel
 
-      - name: 7. 上传固件
+      - name: 6. 收集 Packit 产物
+        run: |
+          mkdir -p /mnt/openwrt-build/firmware/packit
+          find "$GITHUB_WORKSPACE" -type f \( -name "*.img.gz" -o -name "*.img.xz" -o -name "*.zip" \) -print -exec cp {} /mnt/openwrt-build/firmware/packit/ \;
+          echo "✅ 已收集 Packit 产物至 /mnt/openwrt-build/firmware/packit"
+          ls -la /mnt/openwrt-build/firmware/packit
+ 
+       - name: 7. 上传固件
         uses: actions/upload-artifact@main
         with:
           name: ImmortalWRT-Firmware
