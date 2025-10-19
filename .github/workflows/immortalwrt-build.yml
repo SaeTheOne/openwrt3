@@ -61,20 +61,31 @@ jobs:
             /build/$DIY_P1_SH && \
             ./scripts/feeds update -a && ./scripts/feeds install -a && \
             /build/$DIY_P2_SH && \
-            make defconfig && make download -j$ALL_THREADS && \
+            make defconfig && make download -j$ALL_THREADS && 
             # 关键：添加 FORCE_UNSAFE_CONFIGURE=1 允许 root 编译
-            FORCE_UNSAFE_CONFIGURE=1 make -j$ALL_THREADS || FORCE_UNSAFE_CONFIGURE=1 make -j1 V=s && \
-            mkdir -p /build/firmware && cp bin/targets/*/*/*.tar.gz /build/firmware/
+            FORCE_UNSAFE_CONFIGURE=1 make -j$ALL_THREADS || FORCE_UNSAFE_CONFIGURE=1 make -j1 V=s && 
+            TARGET_DIR=$(find bin/targets -mindepth 2 -maxdepth 2 -type d | head -n1) && 
+            mkdir -p /build/firmware && 
+            rsync -a --exclude=packages "$TARGET_DIR/" /build/firmware/ && 
+            chmod -R 755 /build/firmware
           " || { echo "❌ 编译失败"; exit 1; }
 
-      - name: 6. 上传固件
+      - name: 6. 打包 Armvirt（使用仓库内核）
+        uses: unifreq/openwrt_packit@master
+        env:
+          OPENWRT_ARMVIRT: /mnt/openwrt-build/firmware/*armvirt*rootfs*.tar.gz
+          PACKAGE_SOC: s905d_s905x3_beikeyun
+          KERNEL_SOURCE: local
+          KERNEL_DIR: ${{ github.workspace }}/flippy_kernel
+
+      - name: 7. 上传固件
         uses: actions/upload-artifact@main
         with:
           name: ImmortalWRT-Firmware
-          path: /mnt/openwrt-build/firmware/*
+          path: /mnt/openwrt-build/firmware
           retention-days: 7
 
-      - name: 7. 清理环境
+      - name: 8. 清理环境
         if: always()
         run: |
           docker stop openwrt-builder && docker rm openwrt-builder
