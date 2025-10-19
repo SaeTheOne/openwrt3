@@ -20,7 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出仓库代码
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: 1. 确认文件存在
         run: |
@@ -84,8 +86,8 @@ jobs:
           find "$GITHUB_WORKSPACE" -type f \( -name "*.img.gz" -o -name "*.img.xz" -o -name "*.zip" \) -print -exec cp {} /mnt/openwrt-build/firmware/packit/ \;
           echo "✅ 已收集 Packit 产物至 /mnt/openwrt-build/firmware/packit"
           ls -la /mnt/openwrt-build/firmware/packit
- 
-       - name: 7. 上传固件
+
+      - name: 7. 上传固件
         uses: actions/upload-artifact@main
         with:
           name: ImmortalWRT-Firmware
