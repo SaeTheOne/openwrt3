@@ -21,7 +21,7 @@ env:
   # 指定需要优先单线程编译的包（修正了luci-app-docke为luci-app-docker）
   CUSTOM_PACKAGES: "luci-app-amlogic luci-app-nikki luci-app-momo luci-app-docker luci-app-homeproxy luci-app-openclash luci-app-passwall"
   CUSTOM_THREADS: 1  # 自定义包单线程
-  ALL_THREADS: 4     # 工具链/核心组件多线程
+  ALL_THREADS: 2     # 工具链/核心组件多线程
 
 jobs:
   build:
@@ -33,6 +33,12 @@ jobs:
     steps:
     - name: 检出代码
       uses: actions/checkout@main
+    - name: 查看初始磁盘空间
+      run: |
+        echo "初始磁盘空间使用情况："
+        df -h  # 显示所有分区的容量、已用和可用空间
+        echo "----------------------------------------"
+        df -h /  # 单独显示根分区（编译主要占用的分区）情况
 
     - name: 初始化环境
       env:
@@ -40,6 +46,10 @@ jobs:
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
+        sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*  # 清理APT缓存
+        sudo rm -rf /usr/local/share/powershell /usr/share/swift  # 删除不相关工具
+        sudo rm -rf /usr/lib/jvm /usr/lib/mono  # 删除Java/Monono环境
+        sudo rm -rf /opt/microsoft /opt/az  # 删除Azure相关工具
         sudo -E apt-get -qq update
         # 补充工具链依赖（新增zstd，immortalwrt官方文档要求）
         sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
