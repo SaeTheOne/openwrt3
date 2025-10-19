@@ -1,251 +1,175 @@
-name: immortalwrt Builder
+name: ImmortalWRT Build
 
 on:
   repository_dispatch:
   workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'false'
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: openwrt-24.10
+  REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: immortalwrt.config
+  CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
+  UPLOAD_COWTRANSFER: false
+  UPLOAD_WETRANSFER: false
+  UPLOAD_RELEASE: false
   TZ: Asia/Shanghai
-  DEVICE_MODEL: S905D
-  PACKAGE_OUTPUT_PATH: ${{ github.workspace }}/flippy_output
-  BUILD_LOG_FILE: ${{ github.workspace }}/openwrt/build.log
-  # 指定需要优先单线程编译的包（修正了luci-app-docke为luci-app-docker）
-  CUSTOM_PACKAGES: "luci-app-amlogic luci-app-nikki luci-app-momo luci-app-docker luci-app-homeproxy luci-app-openclash luci-app-passwall"
-  CUSTOM_THREADS: 1  # 自定义包单线程
-  ALL_THREADS: 2     # 工具链/核心组件多线程
+  ALL_THREADS: 2
 
 jobs:
   build:
-    permissions:
-      contents: write
-      packages: write
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
-    - name: 检出代码
-      uses: actions/checkout@main
-    - name: 查看初始磁盘空间
-      run: |
-        echo "初始磁盘空间使用情况："
-        df -h  # 显示所有分区的容量、已用和可用空间
-        echo "----------------------------------------"
-        df -h /  # 单独显示根分区（编译主要占用的分区）情况
+      - name: 检查磁盘初始空间
+        run: |
+          echo "=== 初始磁盘空间状态 ==="
+          df -h
+          echo "========================"
+          df -h /mnt
 
-    - name: 初始化环境
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force
-        sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*  # 清理APT缓存
-        sudo rm -rf /usr/local/share/powershell /usr/share/swift  # 删除不相关工具
-        sudo rm -rf /usr/lib/jvm /usr/lib/mono  # 删除Java/Monono环境
-        sudo rm -rf /opt/microsoft /opt/az  # 删除Azure相关工具
-        sudo -E apt-get -qq update
-        # 补充工具链依赖（新增zstd，immortalwrt官方文档要求）
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
-        sudo -E apt-get -qq autoremove --purge
-        sudo -E apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
-        
-    - name: 清理冗余文件释放磁盘空间
-      run: |
-        sudo rm -rf /usr/share/dotnet /var/lib/docker /opt/ghc /usr/local/share/boost /usr/lib/jvm
-        sudo apt clean && sudo rm -rf /var/cache/apt/archives/*
-        df -h
-        
-    - name: 迁移工作目录到/mnt（利用大空间）
-      run: |
-        # 在/mnt下创建编译目录
-        sudo mkdir -p /mnt/openwrt-build
-        sudo chown -R runner:runner /mnt/openwrt-build  # 赋予当前用户权限
-        # 将后续操作的工作目录指向/mnt下的目录
-        echo "WORK_DIR=/mnt/openwrt-build" >> $GITHUB_ENV
-    
-    - name: 克隆源码
-      working-directory: /mnt/workdir  # 改为/mnt下的目录
-      run: |
-        df -hT $PWD  # 再次确认当前目录的分区空间（应显示/dev/sda1，即66GB可用的分区）
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-        # 保持软链接，让$GITHUB_WORKSPACE（默认工作目录）能访问到/mnt下的源码
-        ln -sf /mnt/workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-    - name: 加载自定义软件源
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH
-
-    - name: 更新软件源
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: 安装软件源
-      run: cd openwrt && ./scripts/feeds install -a
-
-    - name: 加载自定义配置
-      run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 确保目标架构配置正确（AArch64 + Musl C库）
-        echo "CONFIG_TARGET_armvirt=y" >> .config
-        echo "CONFIG_TARGET_armvirt_64=y" >> .config
-        echo "CONFIG_TARGET_armvirt_64_DEVICE_generic=y" >> .config
-        echo "CONFIG_LIBC=musl" >> .config  # 明确指定Musl C库（避免工具链错乱）
-        # 确保指定的自定义包已启用
-        for pkg in ${{ env.CUSTOM_PACKAGES }}; do
-          echo "CONFIG_PACKAGE_$pkg=y" >> .config
-        done
-        # 生成最终配置（避免配置冲突）
-        make defconfig 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
-
-    - name: 下载软件包
-      id: package
-      run: |
-        cd $WORK_DIR/openwrt  # 确保在/mnt下的目录操作
-        make download -j$ALL_THREADS
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-
-    - name: 多线程构建 target 工具链（关键修复）
-      run: |
-        cd $WORK_DIR/openwr
-        echo "开始构建 AArch64 交叉编译工具链（$ALL_THREADS 线程）"
-        # 先构建工具链（toolchain），生成ld-musl等核心文件
-        make toolchain/compile -j$ALL_THREADS V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
-        # 工具链构建失败直接终止
-        if [ $? -ne 0 ]; then
-          echo "工具链构建失败，无法继续编译自定义包"
-          exit 1
-        fi
-
-    - name: 单线程编译指定自定义包
-      id: compile-custom
-      run: |
-        cd openwrt
-        echo "开始单线程编译指定自定义包：${{ env.CUSTOM_PACKAGES }}"
-        for pkg in ${{ env.CUSTOM_PACKAGES }}; do
-          echo "===== 开始编译 $pkg ====="
-          make package/$pkg/compile -j$CUSTOM_THREADS V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
-          if [ $? -ne 0 ]; then
-            echo "$pkg 编译失败，日志已保存"
-            echo "compile_status=failed" >> $GITHUB_ENV
-            exit 1
-          fi
-        done
-        echo "所有指定自定义包编译完成"
-        echo "compile_status=success" >> $GITHUB_ENV
-
-    - name: 多线程编译剩余所有组件
-      id: compile-all
-      if: env.compile_status == 'success'
-      run: |
-        cd openwrt
-        echo "开始多线程编译剩余所有组件（$ALL_THREADS 线程）"
-        make -j$ALL_THREADS V=1 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
-        if [ $? -ne 0 ]; then
-          echo "剩余组件编译失败，日志已保存"
-          echo "compile_status=failed" >> $GITHUB_ENV
-        else
-          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-        fi
-
-    - name: 保存编译日志（无论成功/失败）
-      uses: actions/upload-artifact@main
-      if: always()
-      with:
-        name: build-logs-${{ env.DEVICE_MODEL }}-${{ env.FILE_DATE || 'failed' }}
-        path: |
-          ${{ env.BUILD_LOG_FILE }}
-          openwrt/.config
-          openwrt/feeds.conf.default
-
-    - name: 编译失败时终止后续步骤
-      if: env.compile_status == 'failed'
-      run: |
-        echo "编译失败，已保存日志，终止后续流程"
-        exit 1
-
-    - name: 清理编译临时文件
-      run: |
-        cd openwrt
-        make clean
-        df -h
-    
-    - name: Flippy打包（适配immortalwrt文件名）
-      id: flippy_pack
-      uses: unifreq/openwrt_packit@master
-      env:
-        OPENWRT_ARMSR: openwrt/bin/targets/*/*/*immortalwrt*rootfs.tar.gz
-        PACKAGE_SOC: s905d
-        KERNEL_VERSION_NAME: 6.1.y_6.12.y
-        OUTPUT_PATH: ${{ env.PACKAGE_OUTPUT_PATH }}
-        EXTRA_ARGS: --with-dtb=meson-gxl-s905d-p230.dtb,meson-gxl-s905d-p241.dtb
+      - name: 初始化环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          # 清理根分区冗余文件，释放更多空间
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+          sudo rm -rf /usr/local/share/powershell /usr/share/swift /usr/lib/jvm /usr/lib/mono
           
-    - name: 检查Flippy打包结果
-      run: |
-        echo "查看打包输出目录内容："
-        ls -l ${{ env.PACKAGE_OUTPUT_PATH }}
-        if [ -z "$(ls -A ${{ env.PACKAGE_OUTPUT_PATH }} 2>/dev/null)" ]; then
-          echo "Flippy打包失败，输出目录为空"
-          exit 1
-        fi
-        
-    - name: 上传Flippy打包文件到Artifact
-      uses: actions/upload-artifact@main
-      if: steps.flippy_pack.outputs.status == 'success' && !cancelled()
-      with:
-        name: Flippy_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.PACKAGE_OUTPUT_PATH }}/*
+          # 安装依赖
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-pip python3-setuptools python3-tkinter rsync unzip zlib1g-dev file wget
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          
+          # 显示清理后根分区空间
+          echo "=== 清理后根分区空间 ==="
+          df -h /
 
-    - name: 生成发布标签
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        echo "📦 Flippy打包固件（immortalwrt）" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
+      - name: 准备大空间工作目录（/mnt）
+        run: |
+          # 创建/mnt下的工作目录并赋权
+          sudo mkdir -p /mnt/workdir
+          sudo chown -R runner:runner /mnt/workdir
+          
+          # 验证目录权限和分区空间
+          echo "=== /mnt/workdir 目录信息 ==="
+          ls -ld /mnt/workdir
+          echo "=== /mnt/workdir 所在分区空间 ==="
+          df -hT /mnt/workdir
 
-    - name: 上传Flippy打包文件到发布版本
-      uses: softprops/action-gh-release@master
-      if: steps.tag.outputs.status == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: ${{ env.PACKAGE_OUTPUT_PATH }}/*
+      - name: 克隆源码
+        working-directory: /mnt/workdir
+        run: |
+          echo "=== 当前克隆目录 ==="
+          echo $PWD
+          df -hT $PWD
+          
+          # 克隆源码
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          cd openwrt
+          git pull
+          
+          # 创建软链接，确保后续步骤能访问源码
+          ln -sf /mnt/workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          
+          # 验证软链接有效性
+          echo "=== 软链接验证 ==="
+          ls -l $GITHUB_WORKSPACE/openwrt
+          echo "=== 源码目录结构 ==="
+          ls -la $GITHUB_WORKSPACE/openwrt
 
-    - name: 检查空间使用情况
-      if: (!cancelled())
-      run: df -hT
+      - name: 加载自定义配置
+        run: |
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          chmod +x $DIY_P1_SH $DIY_P2_SH
+          cd openwrt
+          ../$DIY_P1_SH
 
-    - name: 删除工作流运行记录
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        retain_days: 0
-        keep_minimum_runs: 2
+      - name: 更新 feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-    - name: 移除旧的发布版本
-      uses: dev-drprasad/delete-older-releases@master
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      with:
-        keep_latest: 3
-        delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 应用自定义脚本
+        run: |
+          cd openwrt
+          ../$DIY_P2_SH
+
+      - name: 下载软件包
+        id: package
+        run: |
+          cd openwrt
+          make defconfig
+          make download -j$ALL_THREADS
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+          
+          # 显示当前/mnt分区空间（确认下载包未占满空间）
+          echo "=== 下载包后 /mnt 空间 ==="
+          df -h /mnt
+
+      - name: 多线程编译
+        run: |
+          cd openwrt
+          echo "=== 开始编译，当前线程数：$ALL_THREADS ==="
+          make -j$ALL_THREADS || make -j1 || make -j1 V=s
+          
+          # 编译完成后查看空间
+          echo "=== 编译后 /mnt 空间 ==="
+          df -h /mnt
+
+      - name: 整理输出文件
+        id: organize
+        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "FIRMWARE_DIR=$PWD" >> $GITHUB_ENV
+          echo "::set-output name=status::success"
+          echo "=== 输出文件列表 ==="
+          ls -l
+
+      - name: 上传固件到工件
+        uses: actions/upload-artifact@main
+        if: steps.organize.outputs.status == 'success' && !cancelled()
+        with:
+          name: ImmortalWRT-Firmware
+          path: ${{ env.FIRMWARE_DIR }}
+
+      - name: 上传固件到 Release
+        uses: softprops/action-gh-release@master
+        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ${{ env.FIRMWARE_DIR }}/*
+          name: Build ${{ env.REPO_BRANCH }} @ ${{ github.sha }}
+          body: |
+            ## 自动构建固件
+            - 源码分支：${{ env.REPO_BRANCH }}
+            - 源码 Commit：${{ github.sha }}
+            - 构建时间：${{ env.BUILD_DATE }}
+          draft: false
+          prerelease: false
+
+      - name: 清理编译目录
+        if: always()
+        run: |
+          cd openwrt
+          make clean
+          echo "=== 清理后 /mnt 空间 ==="
+          df -h /mnt
