@@ -66,10 +66,9 @@ jobs:
             make defconfig && make download -j$ALL_THREADS && 
             # 关键：添加 FORCE_UNSAFE_CONFIGURE=1 允许 root 编译
             FORCE_UNSAFE_CONFIGURE=1 make -j$ALL_THREADS || FORCE_UNSAFE_CONFIGURE=1 make -j1 V=s && 
-            TARGET_DIR=$(find bin/targets -mindepth 2 -maxdepth 2 -type d -print -quit) && 
-            [ -n "$TARGET_DIR" ] || { echo "❌ 未找到编译产物目录 bin/targets/*/*"; exit 1; } && 
+            TARGET_DIR=$(find "$(pwd)/bin/targets" -mindepth 2 -maxdepth 2 -type d -print -quit 2>/dev/null); if [ -z "$TARGET_DIR" ]; then echo "❌ 未找到编译产物目录：$(pwd)/bin/targets/*/*"; exit 1; fi && 
             mkdir -p /build/firmware && 
-            rsync -a --exclude=packages "$TARGET_DIR/" /build/firmware/ && 
+            rsync -a --no-specials --no-devices --no-links --exclude=packages "$TARGET_DIR/" /build/firmware/ && 
             chmod -R 755 /build/firmware
           " || { echo "❌ 编译失败"; exit 1; }
 
