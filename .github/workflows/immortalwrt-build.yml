@@ -1,4 +1,4 @@
-name: ImmortalWRT Build docker (Docker 纯净环境)
+name: ImmortalWRT Build (Docker 分步调试版)
 
 on:
   repository_dispatch:
@@ -19,36 +19,67 @@ env:
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
   ALL_THREADS: 2
-  # Docker 镜像：选择官方 Ubuntu 22.04，确保环境纯净
   DOCKER_IMAGE: ubuntu:22.04
 
 jobs:
   build:
     runs-on: ubuntu-latest
     if: github.event.repository.owner.id == github.event.sender.id
-
     steps:
-      - name: 检查磁盘初始空间
+      - name: 1. 检查宿主机基础信息
         run: |
-          echo "=== 宿主机初始磁盘状态 ==="
-          df -h
-          echo "=== /mnt 分区空间（用于挂载编译目录）==="
+          echo "=== 宿主机系统信息 ==="
+          cat /etc/os-release
+          echo "=== 宿主机 Docker 状态 ==="
+          docker --version
+          echo "=== 宿主机 /mnt 空间 ==="
           df -h /mnt
+          # 确保 Docker 服务正常
+          sudo systemctl restart docker && docker info
 
-      - name: 准备宿主机编译目录（挂载到 Docker）
+      - name: 2. 准备宿主机编译目录
         run: |
-          # 在宿主机 /mnt 下创建目录（利用大空间）
+          # 创建目录并赋权（避免权限问题）
           sudo mkdir -p /mnt/openwrt-build
           sudo chown -R runner:runner /mnt/openwrt-build
-          # 复制自定义文件到宿主机目录（供 Docker 内部使用）
-          [ -e $FEEDS_CONF ] && cp $FEEDS_CONF /mnt/openwrt-build/
-          [ -e $CONFIG_FILE ] && cp $CONFIG_FILE /mnt/openwrt-build/
-          [ -e $DIY_P1_SH ] && cp $DIY_P1_SH /mnt/openwrt-build/ && chmod +x /mnt/openwrt-build/$DIY_P1_SH
-          [ -e $DIY_P2_SH ] && cp $DIY_P2_SH /mnt/openwrt-build/ && chmod +x /mnt/openwrt-build/$DIY_P2_SH
+          sudo chmod -R 755 /mnt/openwrt-build
+          
+          # 复制自定义文件（增加存在性判断，避免文件不存在导致报错）
+          echo "=== 复制自定义文件到 /mnt ==="
+          if [ -f "$FEEDS_CONF" ]; then
+            cp $FEEDS_CONF /mnt/openwrt-build/ && echo "✅ 复制 $FEEDS_CONF 成功"
+          else
+            echo "⚠️ $FEEDS_CONF 不存在，跳过复制"
+          fi
+          
+          if [ -f "$CONFIG_FILE" ]; then
+            cp $CONFIG_FILE /mnt/openwrt-build/ && echo "✅ 复制 $CONFIG_FILE 成功"
+          else
+            echo "⚠️ $CONFIG_FILE 不存在，跳过复制"
+          fi
+          
+          if [ -f "$DIY_P1_SH" ]; then
+            cp $DIY_P1_SH /mnt/openwrt-build/ && chmod +x /mnt/openwrt-build/$DIY_P1_SH && echo "✅ 复制 $DIY_P1_SH 成功"
+          else
+            echo "⚠️ $DIY_P1_SH 不存在，跳过复制"
+          fi
+          
+          if [ -f "$DIY_P2_SH" ]; then
+            cp $DIY_P2_SH /mnt/openwrt-build/ && chmod +x /mnt/openwrt-build/$DIY_P2_SH && echo "✅ 复制 $DIY_P2_SH 成功"
+          else
+            echo "⚠️ $DIY_P2_SH 不存在，跳过复制"
+          fi
+          
+          # 查看复制结果
+          echo "=== /mnt/openwrt-build 目录内容 ==="
+          ls -la /mnt/openwrt-build/
 
-      - name: 启动 Docker 容器（纯净环境编译）
+      - name: 3. 启动 Docker 容器（单独步骤，便于定位启动错误）
         run: |
-          # 启动 Docker，将宿主机 /mnt/openwrt-build 挂载到容器内 /build
+          echo "=== 拉取 Docker 镜像 ==="
+          docker pull $DOCKER_IMAGE
+          
+          echo "=== 启动 Docker 容器 ==="
           docker run -d \
             --name openwrt-builder \
             --volume /mnt/openwrt-build:/build \
@@ -57,81 +88,155 @@ jobs:
             --env REPO_URL=$REPO_URL \
             --env REPO_BRANCH=$REPO_BRANCH \
             $DOCKER_IMAGE sleep infinity
+          
+          # 验证容器是否启动成功
+          if docker ps | grep -q "openwrt-builder"; then
+            echo "✅ Docker 容器启动成功"
+            docker inspect openwrt-builder | grep "Mounts" -A 20  # 查看挂载是否正常
+          else
+            echo "❌ Docker 容器启动失败，查看日志："
+            docker logs openwrt-builder
+            exit 1  # 启动失败则终止流程
+          fi
 
-          # 进入 Docker 容器，执行完整编译流程（一键脚本）
+      - name: 4. Docker 内初始化环境（分步执行，每步打印日志）
+        run: |
+          # 4.1 安装时区工具（避免交互弹窗）
+          echo "=== 4.1 安装时区工具 ==="
           docker exec openwrt-builder bash -c "
-            # 1. 容器内初始化（更新源+安装依赖，纯净环境无冲突）
             apt-get update -y && \
-            apt-get install -y tzdata && \
+            DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata && \
             ln -snf /usr/share/zoneinfo/\$TZ /etc/localtime && echo \$TZ > /etc/timezone && \
-            apt-get install -y \
-              build-essential flex bison g++ gawk git libncurses5-dev libssl-dev \
-              python3 python3-pip python3-setuptools python3-apt rsync unzip zlib1g-dev file wget && \
+            echo '✅ 时区配置完成'
+          " || { echo "❌ 4.1 步骤失败"; exit 1; }
+
+          # 4.2 安装编译依赖（分阶段，避免一次性安装冲突）
+          echo "=== 4.2 安装编译依赖 ==="
+          docker exec openwrt-builder bash -c "
+            # 基础工具
+            apt-get install -y build-essential flex bison g++ gawk gcc && \
+            # 库文件
+            apt-get install -y libncurses5-dev libssl-dev zlib1g-dev && \
+            # 辅助工具
+            apt-get install -y git python3 python3-pip python3-setuptools python3-apt rsync unzip file wget && \
+            # 清理缓存
             apt-get clean && \
-            echo '=== 容器内依赖安装完成，工具验证 ===' && \
-            command -v gcc && command -v make && command -v python3 && \
-            
-            # 2. 克隆源码到容器内 /build 目录（实际对应宿主机 /mnt）
+            # 验证工具
+            command -v gcc && echo '✅ gcc 正常' || { echo '❌ gcc 缺失'; exit 1; } && \
+            command -v make && echo '✅ make 正常' || { echo '❌ make 缺失'; exit 1; } && \
+            command -v python3 && echo '✅ python3 正常' || { echo '❌ python3 缺失'; exit 1; }
+          " || { echo "❌ 4.2 步骤失败"; exit 1; }
+
+      - name: 5. Docker 内克隆源码
+        run: |
+          echo "=== 5. 克隆 ImmortalWRT 源码 ==="
+          docker exec openwrt-builder bash -c "
             cd /build && \
-            git clone --depth 1 \$REPO_URL -b \$REPO_BRANCH openwrt || git clone \$REPO_URL -b \$REPO_BRANCH openwrt && \
+            echo '当前目录：'`pwd` && \
+            # 克隆（增加深度1加快速度，失败则全量克隆）
+            if ! git clone --depth 1 \$REPO_URL -b \$REPO_BRANCH openwrt; then
+              echo '⚠️ 浅克隆失败，尝试全量克隆'
+              git clone \$REPO_URL -b \$REPO_BRANCH openwrt
+            fi && \
             cd openwrt && git pull && \
-            
-            # 3. 加载自定义配置（从宿主机复制过来的文件）
-            [ -f /build/$FEEDS_CONF ] && mv /build/$FEEDS_CONF feeds.conf.default || true && \
-            [ -f /build/$CONFIG_FILE ] && mv /build/$CONFIG_FILE .config || true && \
-            
-            # 4. 执行自定义脚本
-            [ -f /build/$DIY_P1_SH ] && /build/$DIY_P1_SH || true && \
-            
-            # 5. 更新 feeds 并下载包
-            ./scripts/feeds update -a && ./scripts/feeds install -a && \
-            [ -f /build/$DIY_P2_SH ] && /build/$DIY_P2_SH || true && \
-            make defconfig && \
-            make download -j\$ALL_THREADS && \
-            find dl -size -1024c -exec rm -f {} \; && \
-            echo '=== 下载包完成，开始编译 ===' && \
-            
-            # 6. 编译（多线程失败则单线程）
+            echo '✅ 源码克隆完成，目录大小：'`du -sh .`
+          " || { echo "❌ 5 步骤失败"; exit 1; }
+
+      - name: 6. Docker 内执行编译流程
+        run: |
+          echo "=== 6.1 加载自定义配置 ==="
+          docker exec openwrt-builder bash -c "
+            cd /build/openwrt && \
+            # 加载 feeds 配置
+            if [ -f /build/$FEEDS_CONF ]; then
+              mv /build/$FEEDS_CONF feeds.conf.default && echo '✅ 加载 $FEEDS_CONF 成功'
+            else
+              echo '⚠️ /build/$FEEDS_CONF 不存在，使用默认配置'
+            fi && \
+            # 加载 .config
+            if [ -f /build/$CONFIG_FILE ]; then
+              mv /build/$CONFIG_FILE .config && echo '✅ 加载 $CONFIG_FILE 成功'
+            else
+              echo '⚠️ /build/$CONFIG_FILE 不存在，后续需手动配置'
+            fi
+          " || { echo "❌ 6.1 步骤失败"; exit 1; }
+
+          echo "=== 6.2 执行自定义脚本 1 ==="
+          docker exec openwrt-builder bash -c "
+            cd /build/openwrt && \
+            if [ -f /build/$DIY_P1_SH ]; then
+              /build/$DIY_P1_SH && echo '✅ 执行 $DIY_P1_SH 成功'
+            else
+              echo '⚠️ /build/$DIY_P1_SH 不存在，跳过'
+            fi
+          " || { echo "❌ 6.2 步骤失败（脚本可能有错误）"; exit 1; }
+
+          echo "=== 6.3 更新 feeds ==="
+          docker exec openwrt-builder bash -c "
+            cd /build/openwrt && \
+            ./scripts/feeds update -a && echo '✅ feeds update 成功' && \
+            ./scripts/feeds install -a && echo '✅ feeds install 成功'
+          " || { echo "❌ 6.3 步骤失败"; exit 1; }
+
+          echo "=== 6.4 执行自定义脚本 2 ==="
+          docker exec openwrt-builder bash -c "
+            cd /build/openwrt && \
+            if [ -f /build/$DIY_P2_SH ]; then
+              /build/$DIY_P2_SH && echo '✅ 执行 $DIY_P2_SH 成功'
+            else
+              echo '⚠️ /build/$DIY_P2_SH 不存在，跳过'
+            fi
+          " || { echo "❌ 6.4 步骤失败（脚本可能有错误）"; exit 1; }
+
+          echo "=== 6.5 下载软件包 ==="
+          docker exec openwrt-builder bash -c "
+            cd /build/openwrt && \
+            make defconfig && echo '✅ defconfig 成功' && \
+            make download -j\$ALL_THREADS && echo '✅ 下载包成功' && \
+            find dl -size -1024c -exec rm -f {} \; && echo '✅ 清理无效包成功'
+          " || { echo "❌ 6.5 步骤失败"; exit 1; }
+
+          echo "=== 6.6 开始编译 ==="
+          docker exec openwrt-builder bash -c "
+            cd /build/openwrt && \
+            echo '使用线程数：'$ALL_THREADS && \
             make -j\$ALL_THREADS || make -j1 || make -j1 V=s && \
-            echo '=== 编译完成，整理输出文件 ===' && \
-            
-            # 7. 复制固件到宿主机挂载目录（供后续上传）
-            cd bin/targets/*/* && \
+            echo '✅ 编译完成'
+          " || { echo "❌ 6.6 步骤失败（编译出错）"; exit 1; }
+
+      - name: 7. 整理并上传固件
+        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        run: |
+          # 复制固件到宿主机挂载目录（便于上传）
+          docker exec openwrt-builder bash -c "
+            cd /build/openwrt/bin/targets/*/* && \
             rm -rf packages && \
+            mkdir -p /build/firmware-output && \
             cp -r * /build/firmware-output/ && \
-            echo '=== 固件已复制到宿主机 /mnt/openwrt-build/firmware-output ==='
+            echo '=== 固件列表 ===' && ls -lh /build/firmware-output/
           "
 
-      - name: 上传固件到工件（从宿主机目录读取）
-        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-        uses: actions/upload-artifact@main
-        with:
-          name: ImmortalWRT-Firmware
-          path: /mnt/openwrt-build/firmware-output/*
-          retention-days: 7
+          # 上传到 GitHub Artifacts
+          echo "=== 上传固件 ==="
+          if [ -d "/mnt/openwrt-build/firmware-output" ]; then
+            uses: actions/upload-artifact@main
+            with:
+              name: ImmortalWRT-Firmware
+              path: /mnt/openwrt-build/firmware-output/*
+              retention-days: 7
+            echo "✅ 固件上传成功"
+          else
+            echo "❌ 固件目录不存在，上传失败"
+            exit 1
+          fi
 
-      - name: 上传固件到 Release
-        uses: softprops/action-gh-release@master
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: /mnt/openwrt-build/firmware-output/*
-          name: Build ${{ env.REPO_BRANCH }} @ ${{ github.sha }}
-          body: |
-            ## 自动构建固件（Docker 纯净环境）
-            - 源码分支：${{ env.REPO_BRANCH }}
-            - 源码 Commit：${{ github.sha }}
-            - 构建环境：Ubuntu 22.04 (Docker)
-          draft: false
-          prerelease: false
-
-      - name: 清理环境
+      - name: 8. 清理环境
         if: always()
         run: |
-          # 停止并删除 Docker 容器
+          echo "=== 清理 Docker 容器 ==="
           docker stop openwrt-builder || true
           docker rm openwrt-builder || true
-          # 清理宿主机编译目录
-          sudo rm -rf /mnt/openwrt-build
-          echo "=== 清理完成 ==="
+          docker system prune -af || true
+          echo "=== 清理宿主机目录 ==="
+          sudo rm -rf /mnt/openwrt-build || true
+          echo "✅ 清理完成"
