@@ -64,13 +64,22 @@ jobs:
         sudo rm -rf /usr/share/dotnet /var/lib/docker /opt/ghc /usr/local/share/boost /usr/lib/jvm
         sudo apt clean && sudo rm -rf /var/cache/apt/archives/*
         df -h
-          
-    - name: 克隆源码
-      working-directory: /workdir
+        
+    - name: 迁移工作目录到/mnt（利用大空间）
       run: |
-        df -hT $PWD
+        # 在/mnt下创建编译目录
+        sudo mkdir -p /mnt/openwrt-build
+        sudo chown -R runner:runner /mnt/openwrt-build  # 赋予当前用户权限
+        # 将后续操作的工作目录指向/mnt下的目录
+        echo "WORK_DIR=/mnt/openwrt-build" >> $GITHUB_ENV
+    
+    - name: 克隆源码
+      working-directory: /mnt/workdir  # 改为/mnt下的目录
+      run: |
+        df -hT $PWD  # 再次确认当前目录的分区空间（应显示/dev/sda1，即66GB可用的分区）
         git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        # 保持软链接，让$GITHUB_WORKSPACE（默认工作目录）能访问到/mnt下的源码
+        ln -sf /mnt/workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: 加载自定义软件源
       run: |
@@ -105,14 +114,14 @@ jobs:
     - name: 下载软件包
       id: package
       run: |
-        cd openwrt
+        cd $WORK_DIR/openwrt  # 确保在/mnt下的目录操作
         make download -j$ALL_THREADS
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
     - name: 多线程构建 target 工具链（关键修复）
       run: |
-        cd openwrt
+        cd $WORK_DIR/openwr
         echo "开始构建 AArch64 交叉编译工具链（$ALL_THREADS 线程）"
         # 先构建工具链（toolchain），生成ld-musl等核心文件
         make toolchain/compile -j$ALL_THREADS V=s 2>&1 | tee -a ${{ env.BUILD_LOG_FILE }}
