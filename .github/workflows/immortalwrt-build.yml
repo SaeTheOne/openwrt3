@@ -1,4 +1,4 @@
-name: ImmortalWRT Build (修复 'file' 依赖)
+name: ImmortalWRT Build (修复 root 编译限制)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: master
-  CONFIG_FILE: immortalwrt.config  # 你的配置文件名
+  CONFIG_FILE: immortalwrt.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
@@ -42,26 +42,17 @@ jobs:
           docker run -d --name openwrt-builder -v /mnt/openwrt-build:/build $DOCKER_IMAGE sleep infinity
           docker ps | grep -q "openwrt-builder" || { echo "❌ 容器启动失败"; exit 1; }
 
-      - name: 4. 安装依赖（强制安装 'file' 并验证）
+      - name: 4. 安装依赖
         run: |
           docker exec openwrt-builder bash -c "
             apt-get update -y && \
             DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata && \
-            # 单独强制安装 'file' 包，确保其被正确安装
-            apt-get install -y --force-yes file && \
-            # 安装其他依赖
             apt-get install -y build-essential flex bison g++ gawk gcc swig git \
-              libncurses5-dev libssl-dev zlib1g-dev python3 python3-pip rsync unzip wget && \
-            apt-get clean && \
-            # 关键：验证 'file' 命令是否可用
-            if ! command -v file &> /dev/null; then
-              echo '❌ 仍然缺少 file 工具，安装失败' && exit 1
-            else
-              echo '✅ file 工具安装成功'
-            fi
+              libncurses5-dev libssl-dev zlib1g-dev python3 python3-pip rsync unzip wget file && \
+            apt-get clean
           " || { echo "❌ 依赖安装失败"; exit 1; }
 
-      - name: 5. 克隆源码并编译
+      - name: 5. 克隆源码并编译（添加 root 绕过参数）
         run: |
           docker exec openwrt-builder bash -c "
             cd /build && \
@@ -71,7 +62,8 @@ jobs:
             ./scripts/feeds update -a && ./scripts/feeds install -a && \
             /build/$DIY_P2_SH && \
             make defconfig && make download -j$ALL_THREADS && \
-            make -j$ALL_THREADS || make -j1 V=s && \
+            # 关键：添加 FORCE_UNSAFE_CONFIGURE=1 允许 root 编译
+            FORCE_UNSAFE_CONFIGURE=1 make -j$ALL_THREADS || FORCE_UNSAFE_CONFIGURE=1 make -j1 V=s && \
             mkdir -p /build/firmware && cp bin/targets/*/*/*.tar.gz /build/firmware/
           " || { echo "❌ 编译失败"; exit 1; }
 
