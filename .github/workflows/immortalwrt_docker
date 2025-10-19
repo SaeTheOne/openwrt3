@@ -1,4 +1,4 @@
-name: ImmortalWRT Build (Docker 纯净环境)
+name: ImmortalWRT Build docker (Docker 纯净环境)
 
 on:
   repository_dispatch:
