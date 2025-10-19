@@ -1,4 +1,4 @@
-name: ImmortalWRT Build (适配仓库实际文件)
+name: ImmortalWRT Build (修复 'file' 依赖)
 
 on:
   workflow_dispatch:
@@ -6,70 +6,59 @@ on:
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: master
-  # 关键：使用你仓库中实际的配置文件名
-  CONFIG_FILE: immortalwrt.config
+  CONFIG_FILE: immortalwrt.config  # 你的配置文件名
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
   ALL_THREADS: 2
   DOCKER_IMAGE: ubuntu:22.04
-  SOURCE_DIR: ./  # 你的文件在根目录
+  SOURCE_DIR: ./
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出仓库代码（包含你的配置文件）
+      - name: 检出仓库代码
         uses: actions/checkout@main
 
-      - name: 1. 确认仓库文件存在
+      - name: 1. 确认文件存在
         run: |
-          echo "=== 仓库根目录文件列表（确认你的配置文件） ==="
           ls -la $SOURCE_DIR/
-          # 验证关键文件是否存在
-          if [ ! -f "$SOURCE_DIR/$CONFIG_FILE" ]; then
-            echo "❌ 未找到 $CONFIG_FILE，请检查仓库" && exit 1
-          else
-            echo "✅ 找到 $CONFIG_FILE"
-          fi
-          if [ ! -f "$SOURCE_DIR/$DIY_P1_SH" ]; then
-            echo "❌ 未找到 $DIY_P1_SH，请检查仓库" && exit 1
-          else
-            echo "✅ 找到 $DIY_P1_SH"
-          fi
+          [ -f "$SOURCE_DIR/$CONFIG_FILE" ] || { echo "❌ 缺少 $CONFIG_FILE"; exit 1; }
+          [ -f "$SOURCE_DIR/$DIY_P1_SH" ] || { echo "❌ 缺少 $DIY_P1_SH"; exit 1; }
 
       - name: 2. 准备编译目录
         run: |
           sudo mkdir -p /mnt/openwrt-build
           sudo chown -R runner:runner /mnt/openwrt-build
-          # 复制仓库中的实际文件（使用你的 immortalwrt.config）
-          cp $SOURCE_DIR/$CONFIG_FILE /mnt/openwrt-build/
-          cp $SOURCE_DIR/$DIY_P1_SH /mnt/openwrt-build/ && chmod +x /mnt/openwrt-build/$DIY_P1_SH
-          cp $SOURCE_DIR/$DIY_P2_SH /mnt/openwrt-build/ && chmod +x /mnt/openwrt-build/$DIY_P2_SH
-          # 确认复制结果
-          echo "=== /mnt/openwrt-build 目录文件 ==="
+          cp $SOURCE_DIR/$CONFIG_FILE $SOURCE_DIR/$DIY_P1_SH $SOURCE_DIR/$DIY_P2_SH /mnt/openwrt-build/
+          chmod +x /mnt/openwrt-build/$DIY_P1_SH /mnt/openwrt-build/$DIY_P2_SH
           ls -la /mnt/openwrt-build/
 
       - name: 3. 启动 Docker 容器
         run: |
           docker pull $DOCKER_IMAGE
-          docker run -d \
-            --name openwrt-builder \
-            --volume /mnt/openwrt-build:/build \
-            --env TZ=$TZ \
-            --env ALL_THREADS=$ALL_THREADS \
-            $DOCKER_IMAGE sleep infinity
+          docker run -d --name openwrt-builder -v /mnt/openwrt-build:/build $DOCKER_IMAGE sleep infinity
           docker ps | grep -q "openwrt-builder" || { echo "❌ 容器启动失败"; exit 1; }
 
-      - name: 4. 安装依赖（含 swig）
+      - name: 4. 安装依赖（强制安装 'file' 并验证）
         run: |
           docker exec openwrt-builder bash -c "
-            apt-get update && \
+            apt-get update -y && \
             DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata && \
+            # 单独强制安装 'file' 包，确保其被正确安装
+            apt-get install -y --force-yes file && \
+            # 安装其他依赖
             apt-get install -y build-essential flex bison g++ gawk gcc swig git \
               libncurses5-dev libssl-dev zlib1g-dev python3 python3-pip rsync unzip wget && \
-            apt-get clean
+            apt-get clean && \
+            # 关键：验证 'file' 命令是否可用
+            if ! command -v file &> /dev/null; then
+              echo '❌ 仍然缺少 file 工具，安装失败' && exit 1
+            else
+              echo '✅ file 工具安装成功'
+            fi
           " || { echo "❌ 依赖安装失败"; exit 1; }
 
       - name: 5. 克隆源码并编译
@@ -77,16 +66,12 @@ jobs:
           docker exec openwrt-builder bash -c "
             cd /build && \
             git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt && cd openwrt && \
-            # 使用你的 immortalwrt.config 作为配置文件
             mv /build/$CONFIG_FILE .config && \
-            # 执行自定义脚本
             /build/$DIY_P1_SH && \
             ./scripts/feeds update -a && ./scripts/feeds install -a && \
             /build/$DIY_P2_SH && \
-            # 编译
             make defconfig && make download -j$ALL_THREADS && \
             make -j$ALL_THREADS || make -j1 V=s && \
-            # 复制固件
             mkdir -p /build/firmware && cp bin/targets/*/*/*.tar.gz /build/firmware/
           " || { echo "❌ 编译失败"; exit 1; }
 
