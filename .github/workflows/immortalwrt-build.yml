@@ -53,25 +53,34 @@ jobs:
             apt-get clean
           " || { echo "❌ 依赖安装失败"; exit 1; }
 
-      - name: 5. 克隆源码并编译（添加 root 绕过参数）
+      - name: 5. 生成并执行编译脚本
         run: |
-          docker exec openwrt-builder bash -c "
-            cd /build && 
-            git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt && cd openwrt && 
-            mv /build/$CONFIG_FILE .config && 
-            /build/$DIY_P1_SH && 
-            ./scripts/feeds update -a && ./scripts/feeds install -a && 
-            /build/$DIY_P2_SH && 
-            make defconfig && make download -j$ALL_THREADS && 
-            TARGET_COUNT=$(grep -cE '^CONFIG_TARGET_.+=y' .config); if [ "$TARGET_COUNT" -le 0 ]; then echo "❌ .config 未选择任何目标，请检查 .config"; exit 1; fi && 
-            echo "📌 已选择的目标条目：" ; grep -E '^CONFIG_TARGET_.+=y' .config || echo "⚠️ 未列出任何目标" ; 
-            # 关键：添加 FORCE_UNSAFE_CONFIGURE=1 允许 root 编译
-            FORCE_UNSAFE_CONFIGURE=1 make -j$ALL_THREADS || FORCE_UNSAFE_CONFIGURE=1 make -j1 V=s && 
-            TARGET_DIR=$(find "$(pwd)/bin/targets" -mindepth 2 -maxdepth 2 -type d -print -quit 2>/dev/null); if [ -z "$TARGET_DIR" ]; then echo "❌ 未找到编译产物目录：$(pwd)/bin/targets/*/*"; exit 1; fi && 
-            mkdir -p /build/firmware && 
-            rsync -a --no-specials --no-devices --no-links --exclude=packages "$TARGET_DIR/" /build/firmware/ && 
-            chmod -R 755 /build/firmware
-          " || { echo "❌ 编译失败"; exit 1; }
+          cat > /mnt/openwrt-build/run-build.sh <<'EOS'
+          set -e
+          cd /build
+          git clone --depth 1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
+          cd openwrt
+          mv /build/$CONFIG_FILE .config
+          sed -i 's/\r$//' .config /build/$DIY_P1_SH /build/$DIY_P2_SH
+          /build/$DIY_P1_SH
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          /build/$DIY_P2_SH
+          make defconfig
+          make download -j"$ALL_THREADS"
+          TARGET_COUNT=$(grep -cE '^CONFIG_TARGET_.+=y' .config)
+          if [ "$TARGET_COUNT" -le 0 ]; then echo "❌ .config 未选择任何目标，请检查 .config"; exit 1; fi
+          echo "📌 已选择的目标条目："
+          grep -E '^CONFIG_TARGET_.+=y' .config || echo "⚠️ 未列出任何目标"
+          FORCE_UNSAFE_CONFIGURE=1 make -j"$ALL_THREADS" || FORCE_UNSAFE_CONFIGURE=1 make -j1 V=s
+          TARGET_DIR=$(find "$(pwd)/bin/targets" -mindepth 2 -maxdepth 2 -type d -print -quit 2>/dev/null)
+          if [ -z "$TARGET_DIR" ]; then echo "❌ 未找到编译产物目录：$(pwd)/bin/targets/*/*"; exit 1; fi
+          mkdir -p /build/firmware
+          rsync -a --no-specials --no-devices --no-links --exclude=packages "$TARGET_DIR/" /build/firmware/
+          chmod -R 755 /build/firmware
+          EOS
+          chmod +x /mnt/openwrt-build/run-build.sh
+          docker exec openwrt-builder bash /build/run-build.sh || { echo "❌ 编译失败"; exit 1; }
 
       - name: 6. 打包 Armvirt（使用仓库内核）
         uses: unifreq/openwrt_packit@master
