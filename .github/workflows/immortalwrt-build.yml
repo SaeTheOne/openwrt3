@@ -89,10 +89,23 @@ jobs:
             -e DIY_P2_SH="$DIY_P2_SH" \
             openwrt-builder bash /build/run-build.sh || { echo "❌ 编译失败"; exit 1; }
 
+      - name: 5.5 准备 Packit 输入
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/firmware"
+          if ls /mnt/openwrt-build/firmware/*rootfs*.tar.gz >/dev/null 2>&1; then \
+            cp -a /mnt/openwrt-build/firmware/*rootfs*.tar.gz "$GITHUB_WORKSPACE/firmware/"; \
+            echo "✅ 已复制 rootfs 到工作区：$GITHUB_WORKSPACE/firmware"; \
+            ls -la "$GITHUB_WORKSPACE/firmware"; \
+          else \
+            echo "❌ 在 /mnt/openwrt-build/firmware 未找到 rootfs tar.gz"; \
+            ls -la /mnt/openwrt-build/firmware || true; \
+            exit 1; \
+          fi
+
       - name: 6. 打包 Armvirt（使用仓库内核）
         uses: unifreq/openwrt_packit@master
         env:
-          OPENWRT_ARMVIRT: /mnt/openwrt-build/firmware/*armvirt*rootfs*.tar.gz
+          OPENWRT_ARMVIRT: firmware/*rootfs*.tar.gz
           PACKAGE_SOC: s905d_s905x3_beikeyun
           KERNEL_SOURCE: local
           KERNEL_DIR: ${{ github.workspace }}/flippy_kernel
