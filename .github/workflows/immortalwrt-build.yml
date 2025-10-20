@@ -64,7 +64,7 @@ jobs:
             ./scripts/feeds update -a && ./scripts/feeds install -a && \
             /build/$DIY_P2_SH && \
             make defconfig && make download -j$ALL_THREADS && 
-            TARGET_COUNT=$(grep -cE '^CONFIG_TARGET_.+=y' .config); [ "$TARGET_COUNT" -gt 0 ] || (echo "❌ .config 未选择任何目标，请检查 .config"; exit 1) && 
+            TARGET_COUNT=$(grep -cE '^CONFIG_TARGET_.+=y' .config); if [ "$TARGET_COUNT" -le 0 ]; then echo "❌ .config 未选择任何目标，请检查 .config"; exit 1; fi && 
             echo "📌 已选择的目标条目：" && grep -E '^CONFIG_TARGET_.+=y' .config || true && 
             # 关键：添加 FORCE_UNSAFE_CONFIGURE=1 允许 root 编译
             FORCE_UNSAFE_CONFIGURE=1 make -j$ALL_THREADS || FORCE_UNSAFE_CONFIGURE=1 make -j1 V=s && 
