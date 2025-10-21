@@ -103,16 +103,14 @@ jobs:
 
     - name: Upload bin directory
       uses: actions/upload-artifact@main
--      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-+      if: ${{ steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' }}
+      if: ${{ steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' }}
       with:
         name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: openwrt/bin
 
     - name: Organize files
       id: organize
--      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-+      if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
+      if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
       run: |
         if ls -d openwrt/bin/targets/*/* >/dev/null 2>&1; then
           cd openwrt/bin/targets/*/*
@@ -127,16 +125,14 @@ jobs:
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@main
--      if: steps.organize.outputs.status == 'success' && !cancelled()
-+      if: ${{ steps.organize.outputs.status == 'success' && !cancelled() }}
+      if: ${{ steps.organize.outputs.status == 'success' && !cancelled() }}
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
     - name: Generate release tag
       id: tag
--      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-+      if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
+      if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
@@ -147,8 +143,7 @@ jobs:
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@master
--      if: steps.tag.outputs.status == 'success' && !cancelled()
-+      if: ${{ steps.tag.outputs.status == 'success' && !cancelled() }}
+      if: ${{ steps.tag.outputs.status == 'success' && !cancelled() }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -164,8 +159,7 @@ jobs:
 
     - name: Remove old Releases
       uses: dev-drprasad/delete-older-releases@master
--      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-+      if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
+      if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
       with:
         keep_latest: 3
         delete_tags: true
