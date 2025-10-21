@@ -59,6 +59,10 @@ jobs:
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
 
+    - name: Patch luci mk for apk version format
+      run: |
+        sed -i 's/--info "version:${PKG_VERSION}-${PKG_RELEASE}"/--info "version:${PKG_VERSION}" --info "release:${PKG_RELEASE}"/g' openwrt/feeds/luci/luci.mk || true
+
     - name: Install feeds
       run: cd openwrt && ./scripts/feeds install -a
 
