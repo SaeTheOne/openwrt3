@@ -48,7 +48,8 @@ jobs:
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
+-        sudo chown $USER:$GROUPS /workdir
++        sudo chown -R $USER:$USER /workdir
 
     - name: Clone source code
       working-directory: /workdir
@@ -110,13 +111,27 @@ jobs:
         path: openwrt/bin
 
     - name: Organize files
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
-      run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+-      id: organize
+-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+-      run: |
+-        cd openwrt/bin/targets/*/*
+-        rm -rf packages
+-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+-        echo "status=success" >> $GITHUB_OUTPUT
++    - name: Organize files
++      id: organize
++      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
++      run: |
++        if ls -d openwrt/bin/targets/*/* >/dev/null 2>&1; then
++          cd openwrt/bin/targets/*/*
++          rm -rf packages
++          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
++          echo "status=success" >> $GITHUB_OUTPUT
++        else
++          echo "❌ 未找到产物目录：openwrt/bin/targets/*/*"
++          grep -E '^CONFIG_TARGET_.+=y' openwrt/.config || true
++          exit 1
++        fi
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@main
@@ -126,13 +141,23 @@ jobs:
         path: ${{ env.FIRMWARE }}
 
     - name: Generate release tag
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
+-      id: tag
+-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+-      run: |
+-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+-        touch release.txt
+-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
+-        echo "status=success" >> $GITHUB_OUTPUT
++    - name: Generate release tag
++      id: tag
++      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
++      run: |
++        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
++        touch release.txt
++        if [ "${UPLOAD_GOFILE}" = "true" ] && [ -n "${{ steps.gofile.outputs.url }}" ]; then
++          echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
++        fi
++        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@master
@@ -158,3 +183,4 @@ jobs:
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
