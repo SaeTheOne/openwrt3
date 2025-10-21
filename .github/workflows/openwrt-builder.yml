@@ -102,8 +102,19 @@ jobs:
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
     - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
+    -    - name: Check space usage
+    -      if: (!cancelled())
+    -      run: df -hT
+    +    - name: Check space usage
+    +      if: (!cancelled())
+    +      run: |
+    +        echo "== Filesystem capacity =="
+    +        df -hT /
+    +        df -hT /mnt || true
+    +        echo "== Top-level usage in WORKDIR =="
+    +        du -h -d1 "$WORKDIR" 2>/dev/null || true
+    +        echo "== OpenWrt tree usage =="
+    +        du -h -d1 "$WORKDIR/openwrt" 2>/dev/null || true
 
     - name: Upload bin directory
       uses: actions/upload-artifact@main
