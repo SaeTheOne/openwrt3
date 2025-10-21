@@ -110,6 +110,12 @@ jobs:
           KERNEL_SOURCE: local
           KERNEL_DIR: ${{ github.workspace }}/flippy_kernel
 
+      - name: 6.1 修复固件目录权限
+        if: always()
+        run: |
+          sudo chown -R runner:runner /mnt/openwrt-build/firmware
+          sudo chmod -R 775 /mnt/openwrt-build/firmware
+
       - name: 6. 收集 Packit 产物
         run: |
           mkdir -p /mnt/openwrt-build/firmware/packit
