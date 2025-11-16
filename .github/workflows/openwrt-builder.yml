@@ -1,4 +1,15 @@
-# OpenWrt Builder workflow
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+#
+# File: .github/workflows/openwrt-bulder.yml
+# Description: Build OpenWrt using GitHub Actions
+#
+# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+
 name: OpenWrt Builder
 
 on:
@@ -6,7 +17,7 @@ on:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
@@ -16,7 +27,6 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
-  WORKDIR: /mnt/workdir
 
 jobs:
   build:
@@ -30,8 +40,6 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        df -hT /
-        df -hT /mnt || true
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
@@ -39,15 +47,15 @@ jobs:
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p "$WORKDIR"
-        sudo chown -R $USER:$USER "$WORKDIR"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
 
     - name: Clone source code
-      working-directory: ${{ env.WORKDIR }}
+      working-directory: /workdir
       run: |
         df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf ${{ env.WORKDIR }}/openwrt $GITHUB_WORKSPACE/openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Load custom feeds
       run: |
@@ -58,10 +66,6 @@ jobs:
 
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
-
-    - name: Patch luci mk for apk version format
-      run: |
-        sed -i 's/--info "version:${PKG_VERSION}-${PKG_RELEASE}"/--info "version:${PKG_VERSION}" --info "release:${PKG_RELEASE}"/g' openwrt/feeds/luci/luci.mk || true
 
     - name: Install feeds
       run: cd openwrt && ./scripts/feeds install -a
@@ -95,59 +99,44 @@ jobs:
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
     - name: Check space usage
-      if: ${{ !cancelled() }}
-      run: |
-        echo "== Filesystem capacity =="
-        df -hT /
-        df -hT /mnt || true
-        echo "== Top-level usage in WORKDIR =="
-        du -h -d1 "$WORKDIR" 2>/dev/null || true
-        echo "== OpenWrt tree usage =="
-        du -h -d1 "$WORKDIR/openwrt" 2>/dev/null || true
+      if: (!cancelled())
+      run: df -hT
 
     - name: Upload bin directory
       uses: actions/upload-artifact@main
-      if: ${{ steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' }}
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: openwrt/bin
 
     - name: Organize files
       id: organize
-      if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        if ls -d openwrt/bin/targets/*/* >/dev/null 2>&1; then
-          cd openwrt/bin/targets/*/*
-          rm -rf packages
-          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
-        else
-          echo "❌ 未找到产物目录：openwrt/bin/targets/*/*"
-          grep -E '^CONFIG_TARGET_.+=y' openwrt/.config || true
-          exit 1
-        fi
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@main
-      if: ${{ steps.organize.outputs.status == 'success' && !cancelled() }}
+      if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
     - name: Generate release tag
       id: tag
-      if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        if [ "${UPLOAD_GOFILE}" = "true" ] && [ -n "${{ steps.gofile.outputs.url }}" ]; then
-          echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
-        fi
+        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@master
-      if: ${{ steps.tag.outputs.status == 'success' && !cancelled() }}
+      if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -163,15 +152,9 @@ jobs:
 
     - name: Remove old Releases
       uses: dev-drprasad/delete-older-releases@master
-      if: ${{ env.UPLOAD_RELEASE == 'true' && !cancelled() }}
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       with:
         keep_latest: 3
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Cleanup workspace
-      if: always()
-      run: |
-        rm -rf openwrt/build_dir openwrt/staging_dir openwrt/tmp || true
-        sudo rm -rf "$WORKDIR" || true
