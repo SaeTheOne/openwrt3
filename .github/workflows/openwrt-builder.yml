@@ -159,3 +159,23 @@ jobs:
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    # 在 Package Armvirt as OpenWrt 步骤之前添加
+    - name: 复制本地内核到工具目录
+      run: |
+        # 创建工具默认的内核缓存目录
+        mkdir -p /tmp/kernel_cache
+        # 复制本地 flippy_kernel 中的所有内核文件到该目录
+        cp -rf $GITHUB_WORKSPACE/OpenWrt3/flippy_kernel/* /tmp/kernel_cache/
+        # 确认复制成功
+        ls -l /tmp/kernel_cache/
+
+    - name: Package Armvirt as OpenWrt
+      uses: unifreq/openwrt_packit@master
+      env:
+        OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
+        PACKAGE_SOC: s905d
+        KERNEL_VERSION_NAME: 6.12.46
+        KERNEL_REPO_URL: ""  # 留空，使用本地复制的内核
+        KERNEL_AUTO_LATEST: false  # 关闭自动更新，强制使用本地文件
+    
