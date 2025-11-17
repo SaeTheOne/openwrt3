@@ -39,47 +39,39 @@ jobs:
           fi
           echo "rootfs_path=$ROOTFS" >> $GITHUB_OUTPUT
 
-      - name: Prepare kernel (optional)
+      - name: Place rootfs in workspace root with correct name
         run: |
-          mkdir -p /opt/kernel
-          if [ -d "flippy_kernel" ]; then
-            cp -rf flippy_kernel/* /opt/kernel/
-          fi
+          # Copy and rename to the exact filename expected by openwrt_flippy.sh for s905d
+          cp "${{ steps.get_rootfs.outputs.rootfs_path }}" ./openwrt-armsr-armv8-generic-rootfs.tar.gz
+          echo "✅ Rootfs placed at: $(pwd)/openwrt-armsr-armv8-generic-rootfs.tar.gz"
+          tar -tzf openwrt-armsr-armv8-generic-rootfs.tar.gz | head -n5
 
-      - name: Clone openwrt_packit to a subdirectory
-        run: |
-          git clone https://github.com/unifreq/openwrt_packit packer
-
-      - name: Prepare rootfs in packer directory
-        run: |
-          ROOTFS_PATH="${{ steps.get_rootfs.outputs.rootfs_path }}"
-          # Copy and rename inside the packer dir
-          cp "$ROOTFS_PATH" packer/openwrt-armsr-armv8-generic-rootfs.tar.gz
-          tar -tzf packer/openwrt-armsr-armv8-generic-rootfs.tar.gz | head -n5
-
-      - name: Run packing for s905d
-        working-directory: packer
+      - name: Run openwrt_flippy.sh packaging script
         env:
           PACKAGE_SOC: s905d
           KERNEL_VERSION_NAME: 6.12.46
           KERNEL_AUTO_LATEST: "false"
           OPENWRT_ARMSR: openwrt-armsr-armv8-generic-rootfs.tar.gz
-        run: ./openwrt_flippy.sh
+        run: |
+          # Clone the packer tool (it will create ./openwrt_packit/)
+          git clone --depth=1 https://github.com/unifreq/openwrt_packit
+          # Run the main script — it will auto-copy rootfs from current dir
+          ./openwrt_packit/openwrt_flippy.sh
 
-      - name: Locate .img file
+      - name: Locate generated .img file
         id: locate
         run: |
-          IMG=$(find /opt/openwrt_packit/output -name "*.img" | head -n1)
+          IMG=$(find openwrt_packit/output -name "*.img" | head -n1)
           if [ -z "$IMG" ]; then
-            echo "❌ Packing failed: no .img generated"
-            ls -l /opt/openwrt_packit/output/
+            echo "❌ Packing failed: no .img file generated."
+            ls -l openwrt_packit/output/
             exit 1
           fi
           echo "img_path=$IMG" >> $GITHUB_OUTPUT
           echo "✅ Packed image: $IMG"
 
-      - name: Upload artifact
+      - name: Upload packed image as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: packed-openwrt-image
+          name: openwrt-packed-image
           path: ${{ steps.locate.outputs.img_path }}
