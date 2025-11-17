@@ -1,5 +1,4 @@
-# .github/workflows/pack-image.yml
-name: Pack OpenWrt / ImmortalWrt Image
+name: Pack OpenWrt Image
 
 on:
   workflow_call:
@@ -8,52 +7,45 @@ jobs:
   pack:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout packit tool
+      - name: Install dependencies and make_ext4fs
         run: |
-          git clone --depth=1 https://github.com/unifreq/openwrt_packit.git
-          chmod +x openwrt_packit/make_ext4fs
+          echo "📥 Installing dependencies..."
+          sudo apt-get update
+          sudo apt-get install -y python3 e2fsprogs wget
 
-      - name: Try to download pre-built rootfs artifact (for testing)
-        id: download_artifact
+          echo "📥 Downloading make_ext4fs..."
+          wget https://github.com/sae/sd-fuse_rk3328/raw/master/tools/make_ext4fs -O make_ext4fs
+          chmod +x make_ext4fs
+          sudo mv make_ext4fs /usr/local/bin/
+          make_ext4fs -h  # Verify it works
+
+      - name: Clone openwrt_packit tool
+        run: git clone --depth=1 https://github.com/unifreq/openwrt_packit.git
+
+      - name: Download pre-built rootfs artifact
         uses: actions/download-artifact@v4
         with:
           name: openwrt-rootfs-for-packing
-        continue-on-error: true  # 关键！如果没 artifact 就跳过
-
-      - name: Determine rootfs path
-        id: set_rootfs
-        run: |
-          if [ -f "rootfs.tar.gz" ]; then
-            echo "ROOTFS_PATH=$(pwd)/rootfs.tar.gz" >> $GITHUB_OUTPUT
-            echo "✅ Using pre-uploaded rootfs from artifact"
-          elif [ -f "../openwrt-rootfs-for-packing/rootfs.tar.gz" ]; then
-            # 兼容某些旧方式上传的 artifact 结构
-            echo "ROOTFS_PATH=$(pwd)/../openwrt-rootfs-for-packing/rootfs.tar.gz" >> $GITHUB_OUTPUT
-          else
-            # 主流程：使用编译生成的 rootfs（假设在上层目录）
-            echo "ROOTFS_PATH=$(pwd)/../immortalwrt/bin/targets/armsr/armv8/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz" >> $GITHUB_OUTPUT
-            echo "⚠️ No pre-uploaded rootfs found, using compiled one"
-          fi
+        # This will place 'rootfs.tar.gz' in the current directory
 
       - name: Verify rootfs exists
         run: |
-          ROOTFS="${{ steps.set_rootfs.outputs.ROOTFS_PATH }}"
-          if [ ! -f "$ROOTFS" ]; then
-            echo "❌ Rootfs not found at: $ROOTFS"
-            ls -l "$(dirname "$ROOTFS")"
+          if [ ! -f "rootfs.tar.gz" ]; then
+            echo "❌ rootfs.tar.gz not found!"
+            ls -l
             exit 1
           fi
-          echo "📦 Packing rootfs: $(basename "$ROOTFS")"
+          echo "✅ Found rootfs.tar.gz"
 
       - name: Run packing script
         working-directory: openwrt_packit
         run: |
-          ROOTFS="${{ steps.set_rootfs.outputs.ROOTFS_PATH }}"
-          # 替换为你的实际打包命令，例如：
-          ./make_ext4fs -l 1024M -r "$ROOTFS" ../output.img
+          echo "📦 Packing image..."
+          python3 pack.py -r ../rootfs.tar.gz -o ../immortalwrt-packed.img -s 1024M
+          ls -lh ../immortalwrt-packed.img
 
-      - name: Upload packed image
+      - name: Upload packed image as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: packed-openwrt-image
-          path: openwrt_packit/../output.img
+          name: immortalwrt-packed-image
+          path: immortalwrt-packed.img
