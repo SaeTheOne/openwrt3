@@ -54,17 +54,10 @@ jobs:
 
       - name: Prepare rootfs for packer (rename to openwrt- prefix)
         run: |
-          # Get the resolved rootfs path
           ROOTFS_PATH="${{ steps.get_rootfs.outputs.rootfs_path }}"
-          
-          # Copy into /opt/openwrt_packit/
           cp "$ROOTFS_PATH" /opt/openwrt_packit/
-          
-          # Rename to the exact name expected by mk_s905d_n1.sh
           cd /opt/openwrt_packit
           mv "$(basename "$ROOTFS_PATH")" openwrt-armsr-armv8-generic-rootfs.tar.gz
-          
-          # Verify it's a valid tarball
           tar -tzf openwrt-armsr-armv8-generic-rootfs.tar.gz | head -n5
 
       - name: Run packing (for s905d)
@@ -73,6 +66,7 @@ jobs:
           PACKAGE_SOC: s905d
           KERNEL_VERSION_NAME: 6.12.46
           KERNEL_AUTO_LATEST: "false"
+          OPENWRT_ARMSR: /opt/openwrt_packit/openwrt-armsr-armv8-generic-rootfs.tar.gz  # ✅ 必须加这行
         run: |
           ./openwrt_flippy.sh
 
