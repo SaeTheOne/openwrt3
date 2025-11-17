@@ -46,24 +46,24 @@ jobs:
             cp -rf flippy_kernel/* /opt/kernel/
           fi
 
-      - name: Clone openwrt_packit to workspace
+      - name: Clone openwrt_packit to a subdirectory
         run: |
-          git clone https://github.com/unifreq/openwrt_packit .
-          # 现在 openwrt_flippy.sh 就在 $GITHUB_WORKSPACE/
+          git clone https://github.com/unifreq/openwrt_packit packer
 
-      - name: Prepare rootfs in workspace
+      - name: Prepare rootfs in packer directory
         run: |
           ROOTFS_PATH="${{ steps.get_rootfs.outputs.rootfs_path }}"
-          # Copy and rename in current directory (i.e., $GITHUB_WORKSPACE)
-          cp "$ROOTFS_PATH" ./openwrt-armsr-armv8-generic-rootfs.tar.gz
-          tar -tzf openwrt-armsr-armv8-generic-rootfs.tar.gz | head -n5
+          # Copy and rename inside the packer dir
+          cp "$ROOTFS_PATH" packer/openwrt-armsr-armv8-generic-rootfs.tar.gz
+          tar -tzf packer/openwrt-armsr-armv8-generic-rootfs.tar.gz | head -n5
 
       - name: Run packing for s905d
+        working-directory: packer
         env:
           PACKAGE_SOC: s905d
           KERNEL_VERSION_NAME: 6.12.46
           KERNEL_AUTO_LATEST: "false"
-          OPENWRT_ARMSR: openwrt-armsr-armv8-generic-rootfs.tar.gz  # ← 相对路径，就在当前目录
+          OPENWRT_ARMSR: openwrt-armsr-armv8-generic-rootfs.tar.gz
         run: ./openwrt_flippy.sh
 
       - name: Locate .img file
