@@ -30,8 +30,7 @@ jobs:
           # mk_xxx.sh 脚本期望 /opt/kernel 下有 Image, dtb, modules.tar.gz
           sudo cp flippy_kernel/Image /opt/kernel/
           sudo cp flippy_kernel/modules.tar.gz /opt/kernel/
-          # 👇 关键：将 s905d_s905x3_beikeyun.dtb 重命名为 dtb
-          sudo cp flippy_kernel/s905d_s905x3_beikeyun.dtb /opt/kernel/dtb
+
 
           # 设置权限
           sudo chmod 644 /opt/kernel/*
