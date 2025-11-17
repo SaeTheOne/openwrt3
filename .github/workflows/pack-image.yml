@@ -12,64 +12,35 @@ jobs:
           echo "🔧 Updating package list..."
           sudo apt-get update || { echo "❌ Failed to update package list"; exit 1; }
 
-          echo "📦 Installing e2fsprogs and essential tools..."
-          # 安装 e2fsprogs (包含 mkfs.ext4) 以及其他可能需要的工具
+          echo "📦 Installing essential system packages..."
+          # 只安装真正的软件包，它们包含了所需的工具
           sudo apt-get install -y \
-            e2fsprogs util-linux parted dosfstools btrfs-progs wget python3 \
-            losetup lsblk blkid uuidgen fdisk mkfs.vfat mkfs.btrfs \
+            e2fsprogs \
+            util-linux \
+            parted \
+            dosfstools \
+            btrfs-progs \
+            wget \
+            python3 \
             || { echo "❌ Failed to install one or more packages"; exit 1; }
 
-          echo "✅ All system dependencies installed."
+          echo "✅ All system packages installed."
 
-      - name: Verify mkfs.ext4 is available and functional
+      - name: Verify essential tools are available
         run: |
-          echo "🔍 Checking if 'mkfs.ext4' command exists..."
+          echo "🔍 Verifying essential tools are available:"
+          # 检查这些命令是否可以通过 PATH 找到
+          TOOLS_TO_CHECK="losetup lsblk blkid uuidgen fdisk parted mkfs.vfat mkfs.ext4 mkfs.btrfs"
+          for tool in $TOOLS_TO_CHECK; do
+            if command -v "$tool" > /dev/null 2>&1; then
+              echo "✅ $tool found at $(command -v "$tool")"
+            else
+              echo "❌ $tool NOT found!"
+              exit 1
+            fi
+          done
 
-          # 方法1: 使用 which
-          if which mkfs.ext4 > /dev/null 2>&1; then
-            echo "✅ 'which mkfs.ext4' found it."
-          else
-            echo "❌ 'which mkfs.ext4' did NOT find it."
-            exit 1
-          fi
-
-          # 方法2: 使用 command -v
-          if command -v mkfs.ext4 > /dev/null 2>&1; then
-            echo "✅ 'command -v mkfs.ext4' found it."
-          else
-            echo "❌ 'command -v mkfs.ext4' did NOT find it."
-            exit 1
-          fi
-
-          # 方法3: 直接获取路径
-          MKFS_EXT4_PATH=$(which mkfs.ext4)
-          echo "📁 Path of mkfs.ext4: $MKFS_EXT4_PATH"
-
-          # 检查文件是否存在
-          if [ -f "$MKFS_EXT4_PATH" ]; then
-            echo "✅ File '$MKFS_EXT4_PATH' exists."
-          else
-            echo "❌ File '$MKFS_EXT4_PATH' does not exist!"
-            exit 1
-          fi
-
-          # 检查文件权限和类型
-          echo "📄 File details:"
-          ls -l "$MKFS_EXT4_PATH"
-          file "$MKFS_EXT4_PATH"
-
-          # 测试执行帮助命令
-          echo "🧪 Testing 'mkfs.ext4 -h'..."
-          if mkfs.ext4 -h > /dev/null 2>&1; then
-            echo "✅ 'mkfs.ext4 -h' executed successfully."
-            echo "📋 Help output:"
-            mkfs.ext4 -h | head -n 10 # 只显示前10行帮助信息
-          else
-            echo "❌ 'mkfs.ext4 -h' failed to execute."
-            exit 1
-          fi
-
-          echo "🎉 SUCCESS: mkfs.ext4 is installed, found, and executable!"
+          echo "🎉 SUCCESS: All essential tools are installed and available!"
 
       - name: Clone openwrt_packit tool
         run: |
@@ -80,7 +51,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: openwrt-rootfs-for-packing
-        # This places 'rootfs.tar.gz' in the current directory
 
       - name: Verify rootfs exists
         run: |
@@ -95,9 +65,7 @@ jobs:
         working-directory: openwrt_packit
         run: |
           echo "📦 Packing image using pack.py..."
-          # Ensure rootfs is accessible in the packit dir
           cp ../rootfs.tar.gz ./
-          # Run pack.py (part of openwrt_packit)
           python3 pack.py -r rootfs.tar.gz -o ../immortalwrt-packed.img -s 1024M
           ls -lh ../immortalwrt-packed.img
           echo "✅ Image packed successfully."
