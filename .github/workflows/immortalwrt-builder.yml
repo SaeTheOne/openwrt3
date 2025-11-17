@@ -9,7 +9,6 @@
 name: immortalwrt Builder
 
 on:
-  repository_dispatch:
   workflow_dispatch:
 
 env:
