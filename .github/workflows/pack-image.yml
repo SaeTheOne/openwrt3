@@ -18,7 +18,13 @@ jobs:
     steps:
       - name: Checkout repo (for local rootfs or kernel)
         uses: actions/checkout@v4
-
+        
+      - name: 🔍 Debug: Check file existence
+        run: |
+          ls -l /home/runner/work/openwrt3/openwrt3/
+          ls -l /home/runner/work/openwrt3/openwrt3/test-rootfs/
+          echo "File exists? $(test -f /home/runner/work/openwrt3/openwrt3/test-rootfs/rootfs.tar.gz && echo YES || echo NO)"
+    
       - name: Determine rootfs source
         id: get_rootfs
         run: |
