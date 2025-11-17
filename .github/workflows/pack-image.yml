@@ -7,6 +7,11 @@ jobs:
   pack:
     runs-on: ubuntu-22.04
     steps:
+      # --- 克隆你的仓库 ---
+      # 这是关键，确保 flippy_kernel 目录存在
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       # --- 安装系统依赖 ---
       - name: Install system dependencies
         run: |
@@ -19,18 +24,21 @@ jobs:
         run: |
           # 创建目录
           sudo mkdir -p /opt/kernel
-          
+
           # 检查 flippy_kernel 目录
           if [ ! -d "flippy_kernel" ]; then
             echo "❌ flippy_kernel directory not found!"
+            echo "Current directory contents:"
+            ls -la .
             exit 1
           fi
 
-          # 复制内核文件，并重命名为通用名称
+          # 复制内核文件
           # mk_xxx.sh 脚本期望 /opt/kernel 下有 Image, dtb, modules.tar.gz
           sudo cp flippy_kernel/Image /opt/kernel/
           sudo cp flippy_kernel/modules.tar.gz /opt/kernel/
-
+          # 不需要重命名 dtb 文件，直接复制
+          sudo cp flippy_kernel/s905d_s905x3_beikeyun.dtb /opt/kernel/
 
           # 设置权限
           sudo chmod 644 /opt/kernel/*
@@ -49,18 +57,19 @@ jobs:
           sudo cp rootfs.tar.gz /opt/openwrt_packit/
           echo "✅ rootfs.tar.gz copied to /opt/openwrt_packit/"
 
+      # --- 克隆 openwrt_packit 仓库 ---
+      - name: Clone openwrt_packit
+        run: |
+          cd /opt
+          git clone https://github.com/unifreq/openwrt_packit
+
       # --- 调用 openwrt_packit Action ---
-      # 这个 Action 会模拟运行 mk_xxx.sh 脚本
-      # 它会从 /opt/kernel 读取内核，从 /opt/openwrt_packit 读取 rootfs
       - name: Package Armvirt as OpenWrt
         uses: unifreq/openwrt_packit@master
         env:
           OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
           PACKAGE_SOC: s905d
-          # 注意：这里 KERNEL_VERSION_NAME 可能不再需要
-          # 因为 Action 会直接从 /opt/kernel 读取文件
-          # 如果 Action 仍然尝试下载，你可能需要设置一个虚拟值
-          # KERNEL_VERSION_NAME: dummy
+          # KERNEL_VERSION_NAME: dummy # 可选，如果需要的话
 
       # --- 上传结果 ---
       - name: Upload packed image
