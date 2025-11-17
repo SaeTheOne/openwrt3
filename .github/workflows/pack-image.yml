@@ -6,72 +6,66 @@ on:
 jobs:
   pack:
     runs-on: ubuntu-22.04
-    steps:      
-      - name: Install e2fsprogs and essential tools
+    steps:
+      # --- 安装系统依赖 ---
+      - name: Install system dependencies
         run: |
-          echo "🔧 Updating package list..."
-          sudo apt-get update || { echo "❌ Failed to update package list"; exit 1; }
-
-          echo "📦 Installing essential system packages..."
-          # 只安装真正的软件包，它们包含了所需的工具
+          sudo apt-get update
           sudo apt-get install -y \
-            e2fsprogs \
-            util-linux \
-            parted \
-            dosfstools \
-            btrfs-progs \
-            wget \
-            python3 \
-            || { echo "❌ Failed to install one or more packages"; exit 1; }
+            util-linux uuid-runtime parted dosfstools e2fsprogs btrfs-progs wget
 
-          echo "✅ All system packages installed."
-
-      - name: Verify essential tools are available
+      # --- 创建 /opt/kernel 目录并复制你的内核文件 ---
+      - name: Setup Flippy kernel directory
         run: |
-          echo "🔍 Verifying essential tools are available:"
-          # 检查这些命令是否可以通过 PATH 找到
-          TOOLS_TO_CHECK="losetup lsblk blkid uuidgen fdisk parted mkfs.vfat mkfs.ext4 mkfs.btrfs"
-          for tool in $TOOLS_TO_CHECK; do
-            if command -v "$tool" > /dev/null 2>&1; then
-              echo "✅ $tool found at $(command -v "$tool")"
-            else
-              echo "❌ $tool NOT found!"
-              exit 1
-            fi
-          done
+          # 创建目录
+          sudo mkdir -p /opt/kernel
+          
+          # 检查 flippy_kernel 目录
+          if [ ! -d "flippy_kernel" ]; then
+            echo "❌ flippy_kernel directory not found!"
+            exit 1
+          fi
 
-          echo "🎉 SUCCESS: All essential tools are installed and available!"
+          # 复制内核文件，并重命名为通用名称
+          # mk_xxx.sh 脚本期望 /opt/kernel 下有 Image, dtb, modules.tar.gz
+          sudo cp flippy_kernel/Image /opt/kernel/
+          sudo cp flippy_kernel/modules.tar.gz /opt/kernel/
+          # 👇 关键：将 s905d_s905x3_beikeyun.dtb 重命名为 dtb
+          sudo cp flippy_kernel/s905d_s905x3_beikeyun.dtb /opt/kernel/dtb
 
-      - name: Clone openwrt_packit tool
-        run: |
-          git clone --depth=1 https://github.com/unifreq/openwrt_packit.git
-          ls -la openwrt_packit/
+          # 设置权限
+          sudo chmod 644 /opt/kernel/*
 
-      - name: Download pre-built rootfs artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: openwrt-rootfs-for-packing
+          # 验证
+          echo "✅ /opt/kernel directory contents:"
+          ls -la /opt/kernel/
 
-      - name: Verify rootfs exists
+      # --- 确保 rootfs.tar.gz 存在 ---
+      - name: Verify rootfs
         run: |
           if [ ! -f "rootfs.tar.gz" ]; then
             echo "❌ rootfs.tar.gz not found!"
-            ls -l
             exit 1
           fi
-          echo "✅ Found rootfs.tar.gz ($(du -h rootfs.tar.gz))"
+          sudo cp rootfs.tar.gz /opt/openwrt_packit/
+          echo "✅ rootfs.tar.gz copied to /opt/openwrt_packit/"
 
-      - name: Run packing script
-        working-directory: openwrt_packit
-        run: |
-          echo "📦 Packing image using pack.py..."
-          cp ../rootfs.tar.gz ./
-          python3 pack.py -r rootfs.tar.gz -o ../immortalwrt-packed.img -s 1024M
-          ls -lh ../immortalwrt-packed.img
-          echo "✅ Image packed successfully."
+      # --- 调用 openwrt_packit Action ---
+      # 这个 Action 会模拟运行 mk_xxx.sh 脚本
+      # 它会从 /opt/kernel 读取内核，从 /opt/openwrt_packit 读取 rootfs
+      - name: Package Armvirt as OpenWrt
+        uses: unifreq/openwrt_packit@master
+        env:
+          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
+          PACKAGE_SOC: s905d
+          # 注意：这里 KERNEL_VERSION_NAME 可能不再需要
+          # 因为 Action 会直接从 /opt/kernel 读取文件
+          # 如果 Action 仍然尝试下载，你可能需要设置一个虚拟值
+          # KERNEL_VERSION_NAME: dummy
 
-      - name: Upload packed image as artifact
+      # --- 上传结果 ---
+      - name: Upload packed image
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-packed-image
-          path: immortalwrt-packed.img
+          path: /opt/openwrt_packit/output/*.img
