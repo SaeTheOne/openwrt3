@@ -6,19 +6,7 @@ on:
 jobs:
   pack:
     runs-on: ubuntu-22.04
-    steps:
-      - name: Install all required system dependencies
-        run: |
-          echo "🔧 Updating package list..."
-          sudo apt-get update || { echo "❌ Failed to update package list"; exit 1; }
-
-          echo "📦 Installing ALL necessary system tools..."
-          sudo apt-get install -y \
-            util-linux uuid-runtime parted dosfstools e2fsprogs btrfs-progs wget python3 \
-            || { echo "❌ Failed to install one or more packages"; exit 1; }
-
-          echo "✅ All system dependencies installed."
-
+    steps:      
       - name: Download and install make_ext4fs
         run: |
           echo "📥 Downloading make_ext4fs from verified source..."
