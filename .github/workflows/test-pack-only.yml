@@ -7,7 +7,7 @@ on:
         description: 'URL to your rootfs.tar.gz'
         required: true
         type: string
-        default: 'https://github.com/SaeTheOne/openwrt3/releases/download/test/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz'
+        default: 'https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz'
 
 jobs:
   download-and-pack:
