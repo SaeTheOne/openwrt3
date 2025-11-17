@@ -1,83 +1,27 @@
 # .github/workflows/pack-image.yml
-name: Pack OpenWrt / ImmortalWrt Image
-
 on:
   workflow_call:
-    inputs:
-      rootfs_path:
-        required: false
-        type: string
-        description: "Optional: path to *-generic-rootfs.tar.gz (e.g., from build job)"
-  workflow_dispatch:
 
 jobs:
   pack:
     runs-on: ubuntu-22.04
-    outputs:
-      packed_img_path: ${{ steps.locate.outputs.img_path }}
     steps:
-      - name: Checkout repo (for local rootfs or kernel)
-        uses: actions/checkout@v4
-        
-      - name: 🔍 Debug Check file existence
-        run: |
-          ls -l /home/runner/work/openwrt3/openwrt3/
-          ls -l /home/runner/work/openwrt3/openwrt3/test-rootfs/
-          echo "File exists? $(test -f /home/runner/work/openwrt3/openwrt3/test-rootfs/rootfs.tar.gz && echo YES || echo NO)"
-    
-      - name: Determine rootfs source
-        id: get_rootfs
-        run: |
-          ROOTFS=""
-          if [ -n "${{ inputs.rootfs_path }}" ] && [ -f "${{ inputs.rootfs_path }}" ]; then
-            ROOTFS="${{ inputs.rootfs_path }}"
-            echo "Using provided rootfs: $ROOTFS"
-          elif [ -d "rootfs.tar.gz" ]; then
-            ROOTFS=$(find rootfs.tar.gz -maxdepth 1 -name "*-generic-rootfs.tar.gz" | head -n1)
-            if [ -z "$ROOTFS" ]; then
-              echo "❌ No *-generic-rootfs.tar.gz found in rootfs.tar.gz/ directory!"
-              exit 1
-            fi
-            echo "Auto-detected rootfs: $ROOTFS"
-          else
-            echo "❌ No rootfs provided and rootfs.tar.gz/ directory not found!"
-            exit 1
-          fi
-          echo "rootfs_path=$ROOTFS" >> $GITHUB_OUTPUT
+      - name: Checkout packit tool
+        run: git clone --depth=1 https://github.com/unifreq/openwrt_packit.git
 
-      - name: Place rootfs in workspace root with correct name
-        run: |
-          # Copy and rename to the exact filename expected by openwrt_flippy.sh for s905d
-          cp "${{ steps.get_rootfs.outputs.rootfs_path }}" ./openwrt-armsr-armv8-generic-rootfs.tar.gz
-          echo "✅ Rootfs placed at: $(pwd)/openwrt-armsr-armv8-generic-rootfs.tar.gz"
-          tar -tzf openwrt-armsr-armv8-generic-rootfs.tar.gz | head -n5
-
-      - name: Run openwrt_flippy.sh packaging script
-        env:
-          PACKAGE_SOC: s905d
-          KERNEL_VERSION_NAME: 6.12.46
-          KERNEL_AUTO_LATEST: "false"
-          OPENWRT_ARMSR: openwrt-armsr-armv8-generic-rootfs.tar.gz
-        run: |
-          # Clone the packer tool (it will create ./openwrt_packit/)
-          git clone --depth=1 https://github.com/unifreq/openwrt_packit
-          # Run the main script — it will auto-copy rootfs from current dir
-          ./openwrt_packit/openwrt_flippy.sh
-
-      - name: Locate generated .img file
-        id: locate
-        run: |
-          IMG=$(find openwrt_packit/output -name "*.img" | head -n1)
-          if [ -z "$IMG" ]; then
-            echo "❌ Packing failed: no .img file generated."
-            ls -l openwrt_packit/output/
-            exit 1
-          fi
-          echo "img_path=$IMG" >> $GITHUB_OUTPUT
-          echo "✅ Packed image: $IMG"
-
-      - name: Upload packed image as artifact
-        uses: actions/upload-artifact@v4
+      - name: Download rootfs artifact
+        uses: actions/download-artifact@v4
         with:
-          name: openwrt-packed-image
-          path: ${{ steps.locate.outputs.img_path }}
+          name: openwrt-rootfs-for-packing
+        # 文件会出现在当前目录：./rootfs.tar.gz
+
+      - name: Pack image
+        working-directory: openwrt_packit
+        run: |
+          ROOTFS="../rootfs.tar.gz"
+          if [ ! -f "$ROOTFS" ]; then
+            echo "❌ Missing rootfs!"
+            exit 1
+          fi
+          # 执行你的打包命令，例如：
+          # ./make_ext4fs -l 1024M -r ../rootfs.tar.gz output.img
