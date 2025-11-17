@@ -8,7 +8,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # --- 克隆你的仓库 ---
-      # 这是关键，确保 flippy_kernel 目录存在
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -19,33 +18,30 @@ jobs:
           sudo apt-get install -y \
             util-linux uuid-runtime parted dosfstools e2fsprogs btrfs-progs wget
 
-      # --- 创建 /opt/kernel 目录并复制你的内核文件 ---
-      - name: Setup Flippy kernel directory
+      # --- 检查你的 flippy_kernel 目录 ---
+      - name: Verify flippy_kernel directory
         run: |
-          # 创建目录
-          sudo mkdir -p /opt/kernel
-
-          # 检查 flippy_kernel 目录
           if [ ! -d "flippy_kernel" ]; then
             echo "❌ flippy_kernel directory not found!"
-            echo "Current directory contents:"
-            ls -la .
+            ls -la
             exit 1
           fi
+          echo "✅ flippy_kernel directory found."
+          ls -la flippy_kernel/
 
-          # 复制内核文件
-          # mk_xxx.sh 脚本期望 /opt/kernel 下有 Image, dtb, modules.tar.gz
-          sudo cp flippy_kernel/Image /opt/kernel/
-          sudo cp flippy_kernel/modules.tar.gz /opt/kernel/
-          # 不需要重命名 dtb 文件，直接复制
-          sudo cp flippy_kernel/s905d_s905x3_beikeyun.dtb /opt/kernel/
-
-          # 设置权限
-          sudo chmod 644 /opt/kernel/*
-
-          # 验证
-          echo "✅ /opt/kernel directory contents:"
-          ls -la /opt/kernel/
+      # --- 创建符合 Action 预期的内核包 ---
+      # Action 会尝试下载 kernel-6.12.46.tar.gz
+      # 我们提前创建它，这样 wget -c 就不会去下载
+      - name: Create kernel package for openwrt_packit
+        run: |
+          echo "📦 Creating kernel package: kernel-6.12.46.tar.gz"
+          cd flippy_kernel
+          # 打包 Image, dtb, modules.tar.gz
+          # 注意：如果 modules.tar.gz 不存在，你需要先创建它
+          tar -czf ../kernel-6.12.46.tar.gz Image dtb modules.tar.gz
+          cd ..
+          ls -lh kernel-6.12.46.tar.gz
+          echo "✅ Created kernel-6.12.46.tar.gz"
 
       # --- 确保 rootfs.tar.gz 存在 ---
       - name: Verify rootfs
@@ -54,26 +50,22 @@ jobs:
             echo "❌ rootfs.tar.gz not found!"
             exit 1
           fi
-          sudo cp rootfs.tar.gz /opt/openwrt_packit/
-          echo "✅ rootfs.tar.gz copied to /opt/openwrt_packit/"
-
-      # --- 克隆 openwrt_packit 仓库 ---
-      - name: Clone openwrt_packit
-        run: |
-          cd /opt
-          git clone https://github.com/unifreq/openwrt_packit
+          echo "✅ Found rootfs.tar.gz"
 
       # --- 调用 openwrt_packit Action ---
+      # 关键：设置 KERNEL_VERSION_NAME 为 6.12.46
+      # Action 会尝试下载 kernel-6.12.46.tar.gz
+      # 但我们已经创建了它，所以 wget -c 会直接使用本地文件
       - name: Package Armvirt as OpenWrt
         uses: unifreq/openwrt_packit@master
         env:
           OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
           PACKAGE_SOC: s905d
-          # KERNEL_VERSION_NAME: dummy # 可选，如果需要的话
+          KERNEL_VERSION_NAME: 6.12.46 # 👈 Action 会用这个值构造 URL
 
-      # --- 上传结果 ---
-      - name: Upload packed image
+      # --- 上传最终的打包镜像 ---
+      - name: Upload packed image as artifact
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-packed-image
-          path: /opt/openwrt_packit/output/*.img
+          path: immortalwrt-packed.img
