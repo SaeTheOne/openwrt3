@@ -1,21 +1,25 @@
-name: 🔧 Test Pack Only (Upload Your RootFS)
+name: Test Pack Only (Upload Your RootFS)
 
 on:
   workflow_dispatch:
     inputs:
       rootfs_url:
-        description: 'https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz'
+        description: 'URL to your rootfs.tar.gz'
         required: true
         type: string
+        default: 'https://github.com/SaeTheOne/openwrt3/releases/download/test/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz'
 
 jobs:
   download-and-pack:
     runs-on: ubuntu-22.04
     steps:
-      - name: Download your rootfs
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download rootfs
         run: |
-          mkdir -p test-rootfs
-          cd test-rootfs
+          mkdir -p ./rootfs
+          cd ./rootfs
           wget -O rootfs.tar.gz "${{ github.event.inputs.rootfs_url }}"
           ls -lh
 
@@ -23,10 +27,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-rootfs-for-packing
-          path: test-rootfs/rootfs.tar.gz
-
-    outputs:
-      rootfs_path: /home/runner/work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/test-rootfs/rootfs.tar.gz
+          path: ./rootfs/rootfs.tar.gz
 
   pack:
     needs: download-and-pack
