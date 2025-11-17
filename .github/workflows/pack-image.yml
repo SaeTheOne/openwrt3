@@ -1,0 +1,89 @@
+# .github/workflows/pack-image.yml
+name: Pack OpenWrt / ImmortalWrt Image
+
+on:
+  workflow_call:
+    inputs:
+      rootfs_path:
+        required: false
+        type: string
+        description: "Optional: path to *-generic-rootfs.tar.gz (e.g., from build job)"
+  workflow_dispatch:
+
+jobs:
+  pack:
+    runs-on: ubuntu-22.04
+    outputs:
+      packed_img_path: ${{ steps.locate.outputs.img_path }}
+    steps:
+      - name: Checkout repo (for local rootfs or kernel)
+        uses: actions/checkout@v4
+
+      - name: Determine rootfs source
+        id: get_rootfs
+        run: |
+          ROOTFS=""
+          if [ -n "${{ inputs.rootfs_path }}" ] && [ -f "${{ inputs.rootfs_path }}" ]; then
+            # Mode A: Called with input
+            ROOTFS="${{ inputs.rootfs_path }}"
+            echo "Using provided rootfs: $ROOTFS"
+          elif [ -d "rootfs.tar.gz" ]; then
+            # Mode B: Standalone run – auto find in rootfs.tar.gz/
+            ROOTFS=$(find rootfs.tar.gz -maxdepth 1 -name "*-generic-rootfs.tar.gz" | head -n1)
+            if [ -z "$ROOTFS" ]; then
+              echo "❌ No *-generic-rootfs.tar.gz found in rootfs.tar.gz/ directory!"
+              exit 1
+            fi
+            echo "Auto-detected rootfs: $ROOTFS"
+          else
+            echo "❌ No rootfs provided and rootfs.tar.gz/ directory not found!"
+            exit 1
+          fi
+          echo "rootfs_path=$ROOTFS" >> $GITHUB_OUTPUT
+
+      - name: Prepare kernel (optional, adjust as needed)
+        run: |
+          mkdir -p /opt/kernel
+          if [ -d "flippy_kernel" ]; then
+            cp -rf flippy_kernel/* /opt/kernel/
+          fi
+
+      - name: Clone openwrt_packit
+        run: |
+          sudo mkdir -p /opt/openwrt_packit
+          sudo chown $USER:$USER /opt/openwrt_packit
+          git clone https://github.com/unifreq/openwrt_packit /opt/openwrt_packit
+
+      - name: Copy rootfs to packer
+        run: |
+          cp "${{ steps.get_rootfs.outputs.rootfs_path }}" /opt/openwrt_packit/
+
+      - name: Run packing (example for s905d)
+        working-directory: /opt/openwrt_packit
+        env:
+          OPENWRT_ARMVIRT: ${{ github.event.inputs.rootfs_path || steps.get_rootfs.outputs.rootfs_path }}
+          PACKAGE_SOC: s905d
+          KERNEL_VERSION_NAME: 6.12.46
+          KERNEL_REPO_URL: ""
+          KERNEL_AUTO_LATEST: "false"
+        run: |
+          # You can make PACKAGE_SOC configurable via inputs if needed
+          ./openwrt_flippy.sh
+
+      - name: Locate .img file
+        id: locate
+        run: |
+          IMG=$(find /opt/openwrt_packit/output -name "*.img" | head -n1)
+          if [ -z "$IMG" ]; then
+            echo "❌ Packing failed: no .img generated"
+            ls -l /opt/openwrt_packit/output/
+            exit 1
+          fi
+          echo "img_path=$IMG" >> $GITHUB_OUTPUT
+          echo "✅ Packed image: $IMG"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: packed-openwrt-image
+          path: ${{ steps.locate.outputs.img_path }}
