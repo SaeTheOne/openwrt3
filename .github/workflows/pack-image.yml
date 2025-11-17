@@ -7,41 +7,44 @@ jobs:
   pack:
     runs-on: ubuntu-22.04
     steps:
-      - name: Install system dependencies for openwrt_packit
+      - name: Install all required system dependencies
         run: |
           echo "🔧 Updating package list..."
           sudo apt-get update || { echo "❌ Failed to update package list"; exit 1; }
-      
-          echo "🔧 Installing required tools..."
+
+          echo "📦 Installing ALL necessary system tools..."
           sudo apt-get install -y \
-              uuid-runtime \
-              parted \
-              dosfstools \
-              btrfs-progs \
-              || { echo "❌ Failed to install one or more packages"; exit 1; }
-      
-          echo "✅ All dependencies installed."
+            util-linux \          # Provides: losetup, lsblk, blkid, fdisk
+            uuid-runtime \        # Provides: uuidgen
+            parted \              # Provides: parted
+            dosfstools \          # Provides: mkfs.vfat
+            e2fsprogs \           # Provides: mkfs.ext4
+            btrfs-progs \         # Provides: mkfs.btrfs
+            wget \
+            python3 \
+            || { echo "❌ Failed to install one or more packages"; exit 1; }
 
-      - name: Install dependencies and make_ext4fs
+          echo "✅ All system dependencies installed."
+
+      # 如果你已经通过 actions/cache 或其他方式预安装了 make_ext4fs，
+      # 这一步可以省略。
+      # 但为了健壮性，建议还是检查一下是否存在，或者确保它在 PATH 中。
+      - name: Verify make_ext4fs is available
         run: |
-          echo "📥 Installing dependencies..."
-          sudo apt-get update
-          sudo apt-get install -y python3 e2fsprogs wget
-
-          echo "📥 Downloading make_ext4fs..."
-          wget https://github.com/sae/sd-fuse_rk3328/raw/master/tools/make_ext4fs -O make_ext4fs
-          chmod +x make_ext4fs
-          sudo mv make_ext4fs /usr/local/bin/
-          make_ext4fs -h  # Verify it works
+          which make_ext4fs || { echo "❌ make_ext4fs not found in PATH"; exit 1; }
+          make_ext4fs -h > /dev/null 2>&1 || { echo "❌ make_ext4fs is not executable or broken"; exit 1; }
+          echo "✅ make_ext4fs is ready."
 
       - name: Clone openwrt_packit tool
-        run: git clone --depth=1 https://github.com/unifreq/openwrt_packit.git
+        run: |
+          git clone --depth=1 https://github.com/unifreq/openwrt_packit.git
+          ls -la openwrt_packit/
 
       - name: Download pre-built rootfs artifact
         uses: actions/download-artifact@v4
         with:
           name: openwrt-rootfs-for-packing
-        # This will place 'rootfs.tar.gz' in the current directory
+        # This places 'rootfs.tar.gz' in the current directory
 
       - name: Verify rootfs exists
         run: |
@@ -50,14 +53,18 @@ jobs:
             ls -l
             exit 1
           fi
-          echo "✅ Found rootfs.tar.gz"
+          echo "✅ Found rootfs.tar.gz ($(du -h rootfs.tar.gz))"
 
       - name: Run packing script
         working-directory: openwrt_packit
         run: |
-          echo "📦 Packing image..."
-          python3 pack.py -r ../rootfs.tar.gz -o ../immortalwrt-packed.img -s 1024M
+          echo "📦 Packing image using pack.py..."
+          # Ensure rootfs is accessible
+          cp ../rootfs.tar.gz ./
+          # Run pack.py (part of openwrt_packit)
+          python3 pack.py -r rootfs.tar.gz -o ../immortalwrt-packed.img -s 1024M
           ls -lh ../immortalwrt-packed.img
+          echo "✅ Image packed successfully."
 
       - name: Upload packed image as artifact
         uses: actions/upload-artifact@v4
