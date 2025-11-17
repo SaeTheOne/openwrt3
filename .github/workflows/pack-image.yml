@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repo (for local rootfs or kernel)
         uses: actions/checkout@v4
         
-      - name: 🔍 Debug: Check file existence
+      - name: 🔍 Debug Check file existence
         run: |
           ls -l /home/runner/work/openwrt3/openwrt3/
           ls -l /home/runner/work/openwrt3/openwrt3/test-rootfs/
