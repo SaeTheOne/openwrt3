@@ -2,7 +2,6 @@ name: Pack OpenWrt Image
 
 on:
   workflow_call:
-  workflow_dispatch:
 
 jobs:
   pack:
@@ -12,22 +11,50 @@ jobs:
         run: |
           echo "🔧 Updating package list..."
           sudo apt-get update || { echo "❌ Failed to update package list"; exit 1; }
-      
+
           echo "📦 Installing ALL necessary system tools..."
           sudo apt-get install -y \
             util-linux uuid-runtime parted dosfstools e2fsprogs btrfs-progs wget python3 \
             || { echo "❌ Failed to install one or more packages"; exit 1; }
-      
+
           echo "✅ All system dependencies installed."
 
-      # 如果你已经通过 actions/cache 或其他方式预安装了 make_ext4fs，
-      # 这一步可以省略。
-      # 但为了健壮性，建议还是检查一下是否存在，或者确保它在 PATH 中。
-      - name: Verify make_ext4fs is available
+      - name: Download and install make_ext4fs
         run: |
-          which make_ext4fs || { echo "❌ make_ext4fs not found in PATH"; exit 1; }
-          make_ext4fs -h > /dev/null 2>&1 || { echo "❌ make_ext4fs is not executable or broken"; exit 1; }
-          echo "✅ make_ext4fs is ready."
+          echo "📥 Downloading make_ext4fs from verified source..."
+          # Using a known good link
+          wget https://github.com/ophub/amlogic-s9xxx-openwrt/raw/main/common-files/tools/make_ext4fs -O make_ext4fs
+          echo "✅ Downloaded make_ext4fs locally."
+
+          echo "🔍 Checking file type..."
+          file make_ext4fs
+
+          echo "🔧 Making executable..."
+          chmod +x make_ext4fs
+          echo "✅ Made executable."
+
+          echo "🚚 Moving to /usr/local/bin/..."
+          sudo mv make_ext4fs /usr/local/bin/
+          echo "✅ Moved to /usr/local/bin/"
+
+          echo "🔍 Verifying file exists at destination..."
+          ls -l /usr/local/bin/make_ext4fs
+
+          echo "🔍 Checking PATH..."
+          echo "PATH is: $PATH"
+
+          echo "🔍 Trying 'command -v' to find make_ext4fs..."
+          if command -v make_ext4fs > /dev/null 2>&1; then
+            echo "✅ make_ext4fs found via command -v"
+            make_ext4fs -h > /dev/null 2>&1 && echo "✅ make_ext4fs is executable"
+          else
+            echo "❌ make_ext4fs NOT found via command -v"
+            echo "PATH is: $PATH"
+            ls -l /usr/local/bin/make_ext4fs 2>/dev/null || echo "/usr/local/bin/make_ext4fs does not exist"
+            exit 1
+          fi
+
+          echo "✅ make_ext4fs is ready and functional."
 
       - name: Clone openwrt_packit tool
         run: |
@@ -53,7 +80,7 @@ jobs:
         working-directory: openwrt_packit
         run: |
           echo "📦 Packing image using pack.py..."
-          # Ensure rootfs is accessible
+          # Ensure rootfs is accessible in the packit dir
           cp ../rootfs.tar.gz ./
           # Run pack.py (part of openwrt_packit)
           python3 pack.py -r rootfs.tar.gz -o ../immortalwrt-packed.img -s 1024M
