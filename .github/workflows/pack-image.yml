@@ -7,42 +7,69 @@ jobs:
   pack:
     runs-on: ubuntu-22.04
     steps:      
-      - name: Download and install make_ext4fs
+      - name: Install e2fsprogs and essential tools
         run: |
-          echo "📥 Downloading make_ext4fs from verified source..."
-          # Using a known good link
-          wget https://github.com/ophub/amlogic-s9xxx-openwrt/raw/main/common-files/tools/make_ext4fs -O make_ext4fs
-          echo "✅ Downloaded make_ext4fs locally."
+          echo "🔧 Updating package list..."
+          sudo apt-get update || { echo "❌ Failed to update package list"; exit 1; }
 
-          echo "🔍 Checking file type..."
-          file make_ext4fs
+          echo "📦 Installing e2fsprogs and essential tools..."
+          # 安装 e2fsprogs (包含 mkfs.ext4) 以及其他可能需要的工具
+          sudo apt-get install -y \
+            e2fsprogs util-linux parted dosfstools btrfs-progs wget python3 \
+            losetup lsblk blkid uuidgen fdisk mkfs.vfat mkfs.btrfs \
+            || { echo "❌ Failed to install one or more packages"; exit 1; }
 
-          echo "🔧 Making executable..."
-          chmod +x make_ext4fs
-          echo "✅ Made executable."
+          echo "✅ All system dependencies installed."
 
-          echo "🚚 Moving to /usr/local/bin/..."
-          sudo mv make_ext4fs /usr/local/bin/
-          echo "✅ Moved to /usr/local/bin/"
+      - name: Verify mkfs.ext4 is available and functional
+        run: |
+          echo "🔍 Checking if 'mkfs.ext4' command exists..."
 
-          echo "🔍 Verifying file exists at destination..."
-          ls -l /usr/local/bin/make_ext4fs
-
-          echo "🔍 Checking PATH..."
-          echo "PATH is: $PATH"
-
-          echo "🔍 Trying 'command -v' to find make_ext4fs..."
-          if command -v make_ext4fs > /dev/null 2>&1; then
-            echo "✅ make_ext4fs found via command -v"
-            make_ext4fs -h > /dev/null 2>&1 && echo "✅ make_ext4fs is executable"
+          # 方法1: 使用 which
+          if which mkfs.ext4 > /dev/null 2>&1; then
+            echo "✅ 'which mkfs.ext4' found it."
           else
-            echo "❌ make_ext4fs NOT found via command -v"
-            echo "PATH is: $PATH"
-            ls -l /usr/local/bin/make_ext4fs 2>/dev/null || echo "/usr/local/bin/make_ext4fs does not exist"
+            echo "❌ 'which mkfs.ext4' did NOT find it."
             exit 1
           fi
 
-          echo "✅ make_ext4fs is ready and functional."
+          # 方法2: 使用 command -v
+          if command -v mkfs.ext4 > /dev/null 2>&1; then
+            echo "✅ 'command -v mkfs.ext4' found it."
+          else
+            echo "❌ 'command -v mkfs.ext4' did NOT find it."
+            exit 1
+          fi
+
+          # 方法3: 直接获取路径
+          MKFS_EXT4_PATH=$(which mkfs.ext4)
+          echo "📁 Path of mkfs.ext4: $MKFS_EXT4_PATH"
+
+          # 检查文件是否存在
+          if [ -f "$MKFS_EXT4_PATH" ]; then
+            echo "✅ File '$MKFS_EXT4_PATH' exists."
+          else
+            echo "❌ File '$MKFS_EXT4_PATH' does not exist!"
+            exit 1
+          fi
+
+          # 检查文件权限和类型
+          echo "📄 File details:"
+          ls -l "$MKFS_EXT4_PATH"
+          file "$MKFS_EXT4_PATH"
+
+          # 测试执行帮助命令
+          echo "🧪 Testing 'mkfs.ext4 -h'..."
+          if mkfs.ext4 -h > /dev/null 2>&1; then
+            echo "✅ 'mkfs.ext4 -h' executed successfully."
+            echo "📋 Help output:"
+            mkfs.ext4 -h | head -n 10 # 只显示前10行帮助信息
+          else
+            echo "❌ 'mkfs.ext4 -h' failed to execute."
+            exit 1
+          fi
+
+          echo "🎉 SUCCESS: mkfs.ext4 is installed, found, and executable!"
 
       - name: Clone openwrt_packit tool
         run: |
