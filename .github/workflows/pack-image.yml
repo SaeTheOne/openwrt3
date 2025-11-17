@@ -58,6 +58,18 @@ jobs:
         run: |
           cp "${{ steps.get_rootfs.outputs.rootfs_path }}" /opt/openwrt_packit/
 
+      - name: Prepare rootfs for packer
+        run: |
+          # Step 1: copy to /opt/openwrt_packit/
+          cp "${{ inputs.rootfs_path }}" /opt/openwrt_packit/
+
+          # Step 2: rename to openwrt- prefix (required by mk_*.sh scripts)
+          cd /opt/openwrt_packit
+          mv "$(basename ${{ inputs.rootfs_path }})" openwrt-armsr-armv8-generic-rootfs.tar.gz
+
+          # Optional: verify it's a valid tarball
+          tar -tzf openwrt-armsr-armv8-generic-rootfs.tar.gz | head -n5
+          
       - name: Run packing (example for s905d)
         working-directory: /opt/openwrt_packit
         env:
