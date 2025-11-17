@@ -1,0 +1,152 @@
+name: OpenWrt Builder
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"  # 可选：每日UTC 2点自动构建（北京时间10点）
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt/
+  REPO_BRANCH: v24.10.4
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
+jobs:
+  Build:
+    runs-on: ubuntu-22.04
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          docker rmi $(docker images -q) 2>/dev/null || true
+          [[ -n "${AGENT_TOOLSDIRECTORY}" ]] && rm -rf "${AGENT_TOOLSDIRECTORY}"
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "${TZ}"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: Clone source code
+        working-directory: /workdir
+        run: |
+          df -hT $PWD
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+      - name: Load custom feeds
+        run: |
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          chmod +x $DIY_P1_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+
+      - name: Update feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Load custom configuration
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          chmod +x $DIY_P2_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+
+      - name: 合并根目录额外配置（additional_configs.txt）
+        run: |
+          # 检查项目根目录是否存在 additional_configs.txt
+          if [ -f "$GITHUB_WORKSPACE/additional_configs.txt" ]; then
+            echo "✅ 找到额外配置文件，开始合并到 OpenWrt .config..."
+            # 复制文件到 OpenWrt 源码目录
+            cp $GITHUB_WORKSPACE/additional_configs.txt openwrt/
+            cd openwrt
+            # 追加配置到 .config（覆盖重复项，保留最后生效）
+            cat additional_configs.txt >> .config
+            # 自动修复配置依赖冲突
+            make defconfig
+            echo "✅ 配置合并完成！"
+          else
+            echo "⚠️ 未找到 additional_configs.txt，跳过合并步骤"
+          fi
+
+      - name: Download package dependencies
+        id: package
+        run: |
+          cd openwrt
+          make download -j$(nproc)
+          # 清理无效下载文件（小于1KB的文件）
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: Compile firmware
+        id: compile
+        run: |
+          cd openwrt
+          echo "📦 开始编译，使用 $(nproc) 线程"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          # 提取目标设备型号
+          DEVICE=$(grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/')
+          echo "device=${DEVICE}" >> $GITHUB_OUTPUT
+          echo "firmware_dir=openwrt/bin/targets/$(grep '^CONFIG_TARGET_BOARD' .config | sed -r 's/.*="(.*)"/\1')/$(grep '^CONFIG_TARGET_SUBTARGET' .config | sed -r 's/.*="(.*)"/\1')" >> $GITHUB_OUTPUT
+
+      - name: Organize firmware files
+        id: organize
+        if: steps.compile.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/firmware
+          cp -r ${{ steps.compile.outputs.firmware_dir }}/* $GITHUB_WORKSPACE/firmware/
+          # 清理冗余文件（可选）
+          rm -rf $GITHUB_WORKSPACE/firmware/packages
+          echo "✅ 固件文件整理完成"
+          echo "firmware_path=$GITHUB_WORKSPACE/firmware" >> $GITHUB_OUTPUT
+
+      - name: Upload firmware to Artifacts
+        if: steps.organize.outputs.firmware_path != ''
+        uses: actions/upload-artifact@main
+        with:
+          name: OpenWrt-Firmware-${{ steps.compile.outputs.device }}
+          path: ${{ steps.organize.outputs.firmware_path }}
+
+      - name: Upload firmware to Release
+        if: steps.compile.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
+        uses: softprops/action-gh-release@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.sha }}
+          release_name: OpenWrt Firmware (${{ steps.compile.outputs.device }})
+          files: ${{ steps.organize.outputs.firmware_path }}/*
+          body: |
+            ## 构建信息
+            - 源码分支：${{ env.REPO_BRANCH }}
+            - 目标设备：${{ steps.compile.outputs.device }}
+            - 构建时间：${{ env.TZ }} $(date +"%Y-%m-%d %H:%M:%S")
+            - 提交哈希：${{ github.sha }}
+
+      - name: Remove old Releases
+        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+        uses: dev-drprasad/delete-older-releases@master
+        with:
+          keep_latest: 3  # 保留最新3个发布
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
