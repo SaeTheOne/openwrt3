@@ -1,14 +1,10 @@
+# .github/workflows/immortalwrt-builder.yml
 #
 # https://github.com/P3TERX/Actions-immortalwrt
-#
-# File: .github/workflows/immortalwrt-bulder.yml
-# Description: Build immortalwrt using GitHub Actions
+# Modified to call external pack-image workflow
 #
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
+# Licensed under MIT License.
 
 name: immortalwrt Builder
 
@@ -31,6 +27,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    outputs:
+      firmware_path: ${{ steps.organize.outputs.firmware_path }}
+      rootfs_path: ${{ steps.organize.outputs.rootfs_path }}
 
     steps:
     - name: Checkout
@@ -88,7 +87,7 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 打包源码
+    - name: Compile firmware
       id: compile
       run: |
         cd immortalwrt
@@ -110,70 +109,69 @@ jobs:
         name: immortalwrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: immortalwrt/bin
 
-    - name: Organize files
+    - name: Organize firmware files
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd immortalwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        # 记录打包生成的img文件路径（假设在当前目录，实际按工具输出调整）
-        echo "PACKAGED_IMG=$(find . -name "*.img" | head -n 1)" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
-      with:
-        name: immortalwrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: |
-          ${{ env.FIRMWARE }}/*generic-rootfs.tar.gz  # 只保留generic-rootfs.tar.gz
-          ${{ env.PACKAGED_IMG }}  # 只保留打包生成的img文件
-
-    # 复制本地内核到工具目录（保持不变）
-    - name: 复制本地内核到工具目录
-      run: |
-        mkdir -p /tmp/kernel_cache
-        if [ ! -d "$GITHUB_WORKSPACE/openwrt3/flippy_kernel" ]; then
-          echo "❌ 本地内核目录不存在：$GITHUB_WORKSPACE/openwrt3/flippy_kernel"
+        ROOTFS=$(find . -name "*-generic-rootfs.tar.gz" | head -n1)
+        if [ -z "$ROOTFS" ]; then
+          echo "❌ No *-generic-rootfs.tar.gz found!"
           exit 1
         fi
-        cp -rf $GITHUB_WORKSPACE/openwrt3/flippy_kernel/* /tmp/kernel_cache/
-        echo "✅ 复制的内核文件："
-        ls -l /tmp/kernel_cache/
+        echo "rootfs_path=$PWD/$ROOTFS" >> $GITHUB_OUTPUT
+        echo "firmware_path=$PWD" >> $GITHUB_OUTPUT
+        echo "✅ Found rootfs: $ROOTFS"
 
-    # 打包Armvirt（保持不变）
-    - name: 打包镜像
-      uses: unifreq/openwrt_packit@master
-      env:
-        OPENWRT_ARMVIRT: immortalwrt/bin/targets/*/*/*.tar.gz
-        PACKAGE_SOC: s905d
-        KERNEL_VERSION_NAME: 6.12.46
-        KERNEL_REPO_URL: ""
-        KERNEL_AUTO_LATEST: false
-
-    # 生成Release标签（保持不变）
-    - name: Generate release tag
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    # 上传到Release（只保留目标文件）
-    - name: Upload firmware to release
-      uses: softprops/action-gh-release@master
-      if: steps.tag.outputs.status == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload rootfs artifact for packing
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.rootfs_path
       with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: |
-          ${{ env.FIRMWARE }}/*generic-rootfs.tar.gz  # 上传generic-rootfs.tar.gz
-          ${{ env.PACKAGED_IMG }}  # 上传打包生成的img文件
-          # 如需包含openwrt_packit生成的img，补充路径（例如：./openwrt_packit_output/*.img）
-        overwrite: true
-    
+        name: openwrt-rootfs-for-packing
+        path: ${{ steps.organize.outputs.rootfs_path }}
+
+  pack:
+    needs: build
+    uses: ./.github/workflows/pack-image.yml
+    with:
+      rootfs_path: ${{ needs.build.outputs.rootfs_path }}
+    secrets: inherit
+
+  release:
+    needs: [build, pack]
+    runs-on: ubuntu-22.04
+    if: env.UPLOAD_RELEASE == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download packed image
+        uses: actions/download-artifact@v4
+        with:
+          name: openwrt-packed-image
+
+      - name: Download original rootfs (optional)
+        uses: actions/download-artifact@v4
+        with:
+          name: openwrt-rootfs-for-packing
+
+      - name: Generate release tag
+        id: tag
+        run: |
+          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          files: |
+            openwrt-packed-image/*.img
+            openwrt-rootfs-for-packing/*.tar.gz
+          body: |
+            Built from ImmortalWrt `${{ env.REPO_BRANCH }}`
+            Package SoC: `s905d`
+            Kernel: `6.12.46`
+          draft: false
+          prerelease: false
