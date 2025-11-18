@@ -1,137 +1,50 @@
-name: Pack ImmortalWrt with Custom Flippy Kernel
+# .github/workflows/pack-image.yml
+name: Pack Image
 
 on:
-  workflow_dispatch:
   workflow_call:
+    inputs:
+      rootfs_url:
+        required: true
+        type: string
+      whoami_content:
+/XMLSchema::SimpleType(name='string', base='http://www.w3.org/2001/XMLSchema#string')
+        required: true
+        type: string
 
 jobs:
   pack:
     runs-on: ubuntu-22.04
     steps:
-      # --- 1. 安装系统依赖 ---
-      - name: Install required system packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            util-linux uuid-runtime parted dosfstools e2fsprogs btrfs-progs wget curl
-
-          LSBLK_VER=$(lsblk --version | grep -oE '[0-9]+\.[0-9]+')
-          if dpkg --compare-versions "$LSBLK_VER" lt "2.33"; then
-            echo "❌ lsblk version $LSBLK_VER is too old. Need >= 2.33."
-            exit 1
-          fi
-          echo "✅ System dependencies installed."
-
-      # --- 2. 获取内核版本号 ---
-      - name: Fetch KERNEL_VERSION from whoami file
-        id: get_version
-        run: |
-          VERSION=$(curl -s https://raw.githubusercontent.com/SaeTheOne/openwrt3/refs/heads/main/flippy_kernel/whoami | grep -oP 'KERNEL_VERSION=\K.*')
-          if [ -z "$VERSION" ]; then
-            echo "❌ Failed to extract KERNEL_VERSION"
-            exit 1
-          fi
-          echo "kernel_version=$VERSION" >> $GITHUB_OUTPUT
-
-      # --- 3. 下载内核文件到 /opt/kernel ---
-      - name: Download kernel files to /opt/kernel
-        run: |
-          VERSION="${{ steps.get_version.outputs.kernel_version }}"
-          BASE_URL="https://raw.githubusercontent.com/SaeTheOne/openwrt3/refs/heads/main/flippy_kernel"
-          sudo mkdir -p /opt/kernel
-
-          FILES=("Image" "modules.tar.gz" "s905d_s905x3_beikeyun.dtb")
-          for FILE in "${FILES[@]}"; do
-            echo "📥 Downloading $FILE"
-            sudo curl -L -o "/opt/kernel/$FILE" "$BASE_URL/$FILE"
-          done
-
-          # 创建 dtb 符号链接（供脚本使用）
-          sudo ln -sf /opt/kernel/s905d_s905x3_beikeyun.dtb /opt/kernel/dtb
-          echo "✅ Kernel ready in /opt/kernel"
-
-      # --- 4. 克隆 openwrt_packit ---
-      - name: Clone openwrt_packit
-        run: |
-          cd /opt
-          sudo git clone https://github.com/unifreq/openwrt_packit
-          echo "✅ Cloned openwrt_packit"
-          
-      - name: Create dynamic whoami
-        run: |
-          WHOAMI="SaeTheOne"
-          OPENWRT_VER="R$(date +%y.%m.%d)"
-          DISTRIB_DESCRIPTION="ImmortalWrt"
-          KERNEL_VERSION="${{ steps.get_version.outputs.kernel_version }}"
-          
-          echo "WHOAMI=$WHOAMI" > /opt/openwrt_packit/whoami
-          echo "OPENWRT_VER=$OPENWRT_VER" >> /opt/openwrt_packit/whoami
-          echo "DISTRIB_DESCRIPTION=$DISTRIB_DESCRIPTION" >> /opt/openwrt_packit/whoami
-          echo "KERNEL_VERSION=$KERNEL_VERSION" >> /opt/openwrt_packit/whoami
-          
-          echo "✅ Created whoami file:"
-          cat /opt/openwrt_packit/whoami
-          
-      # --- 5. 下载并处理 rootfs ---
-      - name: Download rootfs-generic artifact
-        uses: actions/download-artifact@v4
+      - name: Checkout openwrt_packit
+        uses: actions/checkout@v4
         with:
-          name: rootfs-generic
-          path: /tmp/rootfs
+          repository: unifreq/openwrt_packit
 
-      - name: Rename immortalwrt rootfs to OpenWrt format
-        id: handle_rootfs
+      - name: Download and rename rootfs
         run: |
-          ROOTFS_FILE=$(find /tmp/rootfs -name "*-generic-rootfs.tar.gz" | head -n1)
-          if [ -z "$ROOTFS_FILE" ]; then
-            echo "❌ No *-generic-rootfs.tar.gz found!"
-            ls -la /tmp/rootfs/
-            exit 1
-          fi
-
-          BASE_NAME=$(basename "$ROOTFS_FILE")
-          echo "Original rootfs: $BASE_NAME"
-
-          # 复制到 openwrt_packit 目录，并重命名为标准格式
-          TARGET_ROOTFS="/opt/openwrt_packit/OpenWrt-armvirt-64-default-rootfs.tar.gz"
-          sudo cp "$ROOTFS_FILE" "$TARGET_ROOTFS"
-          echo "✅ Copied and renamed to OpenWrt-armvirt-64-default-rootfs.tar.gz"
-
-          # 记录原始前缀用于后续恢复
-          if [[ "$BASE_NAME" == immortalwrt* ]]; then
-            echo "is_immortalwrt=true" >> $GITHUB_OUTPUT
-            echo "original_prefix=immortalwrt" >> $GITHUB_OUTPUT
+          URL="${{ inputs.rootfs_url }}"
+          wget -O downloaded.tar.gz "$URL"
+          ORIGINAL=$(basename "$URL")
+          if [[ "${ORIGINAL,,}" == openwrt-* ]]; then
+            FINAL="$ORIGINAL"
           else
-            echo "is_immortalwrt=false" >> $GITHUB_OUTPUT
+            FINAL="openwrt${ORIGINAL#*-}"
           fi
+          mv downloaded.tar.gz "$FINAL"
+          echo "ROOTFS_FILE=$FINAL" >> $GITHUB_ENV
 
-      # --- 6. 执行打包脚本 ---
-      - name: Run mk_s905d_n1.sh
+      - name: Write whoami
+        run: echo '${{ inputs.whoami_content }}' > whoami
+
+      - name: Pack
         run: |
-          cd /opt/openwrt_packit
-          sudo chmod +x mk_s905d_n1.sh
-          echo "🚀 Building image..."
-          sudo ./mk_s905d_n1.sh
-          echo "✅ Build completed."
+          ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
+          sudo cp "$ROOTFS_FILE" .
+          sudo ./mk_s905d_n1.sh _test
 
-      # --- 7. 恢复为 immortalwrt 前缀并上传 ---
-      - name: Rename output image back to immortalwrt prefix
-        run: |
-          OUTPUT_DIR="/opt/openwrt_packit/output"
-          OPENWRT_IMG=$(find "$OUTPUT_DIR" -name "OpenWrt-*.img" | head -n1)
-          if [ -z "$OPENWRT_IMG" ]; then
-            echo "❌ No OpenWrt-*.img found in output!"
-            ls -la "$OUTPUT_DIR"
-            exit 1
-          fi
-
-          # 替换前缀
-          IMMORTALWRT_IMG="${OPENWRT_IMG//OpenWrt/immortalwrt}"
-          sudo mv "$OPENWRT_IMG" "$IMMORTALWRT_IMG"
-          echo "✅ Renamed to: $(basename "$IMMORTALWRT_IMG")"
-
-      - name: Upload final immortalwrt image
+      - name: Upload result
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-packed-image
-          path: /opt/openwrt_packit/output/immortalwrt-*.img
+          name: packed-image
+          path: output/*.img
