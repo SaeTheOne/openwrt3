@@ -102,12 +102,13 @@ jobs:
         with:
           path: ./artifact_rootfs
           pattern: "*.tar.gz"
+          merge-multiple: true
 
       - name: Prepare rootfs from artifact
         if: ${{ inputs.rootfs_url == '' }}
         run: |
           set -e
-          FILE=$(ls -1 ./artifact_rootfs/*.tar.gz | head -n1)
+          FILE=$(find ./artifact_rootfs -type f -name "*.tar.gz" | head -n1)
           if [ -z "$FILE" ]; then
             echo "❌ 未找到 rootfs artifact (*.tar.gz)"
             exit 1
@@ -125,7 +126,7 @@ jobs:
           if [ -n "${{ inputs.rootfs_url }}" ]; then
             ORIGINAL_NAME=$(basename "${{ inputs.rootfs_url }}")
           else
-            ORIGINAL_NAME=$(basename $(ls -1 ./artifact_rootfs/*.tar.gz | head -n1))
+            ORIGINAL_NAME=$(basename $(find ./artifact_rootfs -type f -name "*.tar.gz" | head -n1))
           fi
           KERNEL_VERSION=$(grep '^KERNEL_VERSION=' whoami | cut -d'=' -f2)
           {
