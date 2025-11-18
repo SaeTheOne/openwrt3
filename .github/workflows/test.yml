@@ -45,10 +45,14 @@ jobs:
           wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/whoami -O /tmp/whoami
           sudo cp /tmp/whoami openwrt_packit/whoami  # ✅ 正确路径：openwrt_packit/whoami
 
-      - name: Copy rootfs into packit dir
+      - name: Copy rootfs to correct location (FIXED)
         run: |
+          # 确保在 openwrt_packit/tmp 目录下有 rootfs 文件
           mkdir -p openwrt_packit/tmp
-          cp "${{ env.ROOTFS_FILE }}" openwrt_packit/tmp/  # ✅ 关键修正
+          cp "${{ env.ROOTFS_FILE }}" openwrt_packit/tmp/
+          
+          # 验证文件已复制
+          ls -l openwrt_packit/tmp/
 
       - name: Run packing script
         working-directory: openwrt_packit
