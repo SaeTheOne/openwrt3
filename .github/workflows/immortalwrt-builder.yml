@@ -120,6 +120,8 @@ jobs:
           exit 1
         fi
         echo "rootfs_path=$PWD/$ROOTFS" >> $GITHUB_OUTPUT
+        BASENAME=$(basename "$ROOTFS")
+        echo "rootfs_basename=$BASENAME" >> $GITHUB_OUTPUT
         echo "firmware_path=$PWD" >> $GITHUB_OUTPUT
         echo "✅ Found rootfs: $ROOTFS"
 
@@ -127,7 +129,7 @@ jobs:
       uses: actions/upload-artifact@v4
       if: ${{ steps.organize.outputs.rootfs_path && !cancelled() }}
       with:
-        name: openwrt-rootfs-for-packing
+        name: ${{ steps.organize.outputs.rootfs_basename }}
         path: ${{ steps.organize.outputs.rootfs_path }}
 
   pack:

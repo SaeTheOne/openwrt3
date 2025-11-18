@@ -65,13 +65,13 @@ jobs:
         run: |
           set -e
           KERNEL_VERSION=$(grep '^KERNEL_VERSION=' whoami | cut -d'=' -f2)
-          if [ -z "$KERNEL_VERSION" ]; then
-            echo "未在 whoami 中找到 KERNEL_VERSION"
+          if [ -z "$KERNEL_VERSION ]; then
+            echo "未在 whoami 中找到 KERNEL_VERSION
             exit 1
           fi
           BASE_URL="${{ inputs.kernel_base_url }}"
           [ -z "$BASE_URL" ] && BASE_URL="https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel"
-          echo "使用内核版本: $KERNEL_VERSION"
+          echo "使用内核版本: $KERNEL_VERSION
           echo "内核来源: $BASE_URL"
           sudo mkdir -p /opt/kernel
           cd /tmp
@@ -99,8 +99,8 @@ jobs:
         if: ${{ inputs.rootfs_url == '' }}
         uses: actions/download-artifact@v4
         with:
-          name: openwrt-rootfs-for-packing
           path: ./artifact_rootfs
+          pattern: "*.tar.gz"
 
       - name: Prepare rootfs from artifact
         if: ${{ inputs.rootfs_url == '' }}
@@ -129,7 +129,7 @@ jobs:
           KERNEL_VERSION=$(grep '^KERNEL_VERSION=' whoami | cut -d'=' -f2)
           {
             echo "original_rootfs_name=$ORIGINAL_NAME";
-            echo "kernel_version=$KERNEL_VERSION";
+            echo "kernel_version=$KERNEL_VERSION;
             echo "whoami:";
             cat whoami;
           } > rootfs-meta.txt
