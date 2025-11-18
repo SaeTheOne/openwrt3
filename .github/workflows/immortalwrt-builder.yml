@@ -77,6 +77,10 @@ jobs:
         chmod +x $DIY_P2_SH
         cd immortalwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
+        if [ -f "$GITHUB_WORKSPACE/additional_configs.txt" ]; then
+          echo "✅ 合并 additional_configs.txt 到 .config"
+          cat "$GITHUB_WORKSPACE/additional_configs.txt" >> .config
+        fi
 
     - name: Download package
       id: package
