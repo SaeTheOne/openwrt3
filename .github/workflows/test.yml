@@ -10,9 +10,8 @@ jobs:
       - name: Download rootfs
         run: |
           URL="https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
-          wget -O downloaded.tar.gz "$URL"
-          mv downloaded.tar.gz openwrt24.10.4-armsr-armv8-generic-rootfs.tar.gz
-          echo "ROOTFS_FILE=openwrt24.10.4-armsr-armv8-generic-rootfs.tar.gz" >> $GITHUB_ENV
+          wget -O openwrt-armvirt-64-default-rootfs.tar.gz "$URL"
+          echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
 
       - name: Checkout openwrt_packit
         uses: actions/checkout@v4
@@ -26,19 +25,19 @@ jobs:
           cd /tmp
           echo "📥 Downloading your kernel files (exact names) from flippy_kernel..."
 
-          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/boot-6.12.46-flippy-93+.tar.gz
-          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-allwinner-6.12.46-flippy-93+.tar.gz
-          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-amlogic-6.12.46-flippy-93+.tar.gz
-          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-rockchip-6.12.46-flippy-93+.tar.gz
-          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/header-6.12.46-flippy-93+.tar.gz
-          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/modules-6.12.46-flippy-93+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/boot-6.12.58-flippy-94+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-allwinner-6.12.58-flippy-94+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-amlogic-6.12.58-flippy-94+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-rockchip-6.12.58-flippy-94+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/header-6.12.58-flippy-94+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/modules-6.12.58-flippy-94+.tar.gz
 
-          sudo cp boot-6.12.46-flippy-93+.tar.gz /opt/kernel/
-          sudo cp dtb-allwinner-6.12.46-flippy-93+.tar.gz /opt/kernel/
-          sudo cp dtb-amlogic-6.12.46-flippy-93+.tar.gz /opt/kernel/
-          sudo cp dtb-rockchip-6.12.46-flippy-93+.tar.gz /opt/kernel/
-          sudo cp header-6.12.46-flippy-93+.tar.gz /opt/kernel/
-          sudo cp modules-6.12.46-flippy-93+.tar.gz /opt/kernel/
+          sudo cp boot-6.12.58-flippy-94+.tar.gz /opt/kernel/
+          sudo cp dtb-allwinner-6.12.58-flippy-94+.tar.gz /opt/kernel/
+          sudo cp dtb-amlogic-6.12.58-flippy-94+.tar.gz /opt/kernel/
+          sudo cp dtb-rockchip-6.12.58-flippy-94+.tar.gz /opt/kernel/
+          sudo cp header-6.12.58-flippy-94+.tar.gz /opt/kernel/
+          sudo cp modules-6.12.58-flippy-94+.tar.gz /opt/kernel/
 
       - name: Copy your whoami file (CORRECT PATH)
         run: |
@@ -47,11 +46,13 @@ jobs:
 
       - name: Copy rootfs to correct location (FIXED)
         run: |
-          # 确保在 openwrt_packit/tmp 目录下有 rootfs 文件
+          # 将 rootfs 放到 openwrt_packit 根目录（mk 脚本默认查找处）
+          cp "${{ env.ROOTFS_FILE }}" openwrt_packit/
+          # 同步一份到 tmp 作为备用
           mkdir -p openwrt_packit/tmp
           cp "${{ env.ROOTFS_FILE }}" openwrt_packit/tmp/
-          
-          # 验证文件已复制
+          # 验证文件位置
+          ls -l openwrt_packit/
           ls -l openwrt_packit/tmp/
 
       - name: Run packing script
