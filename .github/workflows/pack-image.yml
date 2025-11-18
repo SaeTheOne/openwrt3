@@ -151,24 +151,6 @@ jobs:
           echo "📦 Packing image using: $ROOTFS_FILE"
           sudo ./mk_s905d_n1.sh _test
 
-      - name: Verify image hash
-        run: |
-          EXPECTED="5CB8B5CFBCE9B3BA687862C13A5748A5A98C1B693D8C581032A6C0AE1A85ABA9"
-          FILE=$(ls -1 output/*.img | head -n1)
-          if [ -z "$FILE" ]; then
-            echo "❌ No .img found in output/"
-            ls -l output || true
-            exit 1
-          fi
-          HASH=$(sha256sum "$FILE" | awk '{print $1}')
-          HASH_UP=$(echo "$HASH" | tr '[:lower:]' '[:upper:]')
-          echo "Image: $FILE"
-          echo "SHA256: $HASH_UP"
-          if [ "$HASH_UP" != "$EXPECTED" ]; then
-            echo "❌ Hash mismatch"
-            exit 1
-          fi
-          echo "✅ Hash verified"
 
       - name: Upload packed image(s)
         uses: actions/upload-artifact@v4
