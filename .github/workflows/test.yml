@@ -1,4 +1,4 @@
-name: 🔧 Test Pack Only (Hardcoded RootFS)
+name: 🔧 Pack with Your Kernel (Exact 7 Files)
 
 on:
   workflow_dispatch:
@@ -7,24 +7,12 @@ jobs:
   pack:
     runs-on: ubuntu-22.04
     steps:
-      - name: Download and smart-rename rootfs
+      - name: Download rootfs
         run: |
           URL="https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
-          echo "📥 Downloading rootfs from: $URL"
           wget -O downloaded.tar.gz "$URL"
-
-          ORIGINAL_NAME=$(basename "$URL")
-          echo "Original filename: $ORIGINAL_NAME"
-
-          if [[ "${ORIGINAL_NAME,,}" == openwrt-* ]]; then
-            FINAL_NAME="$ORIGINAL_NAME"
-          else
-            FINAL_NAME="openwrt${ORIGINAL_NAME#*-}"
-          fi
-
-          mv downloaded.tar.gz "$FINAL_NAME"
-          echo "ROOTFS_FILE=$FINAL_NAME" >> $GITHUB_ENV
-          ls -lh "$FINAL_NAME"
+          mv downloaded.tar.gz openwrt24.10.4-armsr-armv8-generic-rootfs.tar.gz
+          echo "ROOTFS_FILE=openwrt24.10.4-armsr-armv8-generic-rootfs.tar.gz" >> $GITHUB_ENV
 
       - name: Checkout openwrt_packit
         uses: actions/checkout@v4
@@ -32,11 +20,34 @@ jobs:
           repository: unifreq/openwrt_packit
           path: openwrt_packit
 
-      - name: Create whoami file
+      - name: Download and extract your 7 kernel files
         run: |
-          echo "WHOAMI=SaeTheOne" > openwrt_packit/whoami
-          echo "DISTRIB_DESCRIPTION=ImmortalWrt" >> openwrt_packit/whoami
-          echo "OPENWRT_VER=24.10.4" >> openwrt_packit/whoami
+          sudo mkdir -p /opt/kernel
+          cd /tmp
+          echo "📥 Downloading your 7 kernel files from flippy_kernel directory..."
+
+          # 严格按您提供的文件名下载
+          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/boot-6.12.46-flippy-93+.tar.gz
+          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-allwinner-6.12.46-flippy-93+.tar.gz
+          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-amlogic-6.12.46-flippy-93+.tar.gz
+          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-rockchip-6.12.46-flippy-93+.tar.gz
+          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/header-6.12.46-flippy-93+.tar.gz
+          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/modules-6.12.46-flippy-93+.tar.gz
+
+          # 解压所有 tar.gz 文件到 /opt/kernel/
+          sudo tar -xzf boot-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          sudo tar -xzf dtb-allwinner-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          sudo tar -xzf dtb-amlogic-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          sudo tar -xzf dtb-rockchip-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          sudo tar -xzf header-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          sudo tar -xzf modules-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+
+          echo "📁 Verified files in /opt/kernel/:"
+          ls -l /opt/kernel/
+
+      - name: Copy your whoami file
+        run: |
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/whoami -O openwrt_packit/whoami
 
       - name: Copy rootfs into packit dir
         run: cp "${{ env.ROOTFS_FILE }}" openwrt_packit/
