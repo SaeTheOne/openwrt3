@@ -1,4 +1,4 @@
-name: 🔧 Pack with Your Kernel (Exact Steps)
+name: test
 
 on:
   workflow_dispatch:
