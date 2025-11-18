@@ -34,13 +34,13 @@ jobs:
           sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/header-6.12.46-flippy-93+.tar.gz
           sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/modules-6.12.46-flippy-93+.tar.gz
 
-          # 解压所有 tar.gz 文件到 /opt/kernel/
-          sudo tar -xzf boot-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          sudo tar -xzf dtb-allwinner-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          sudo tar -xzf dtb-amlogic-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          sudo tar -xzf dtb-rockchip-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          sudo tar -xzf header-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          sudo tar -xzf modules-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          # # 解压所有 tar.gz 文件到 /opt/kernel/
+          # sudo tar -xzf boot-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          # sudo tar -xzf dtb-allwinner-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          # sudo tar -xzf dtb-amlogic-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          # sudo tar -xzf dtb-rockchip-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          # sudo tar -xzf header-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          # sudo tar -xzf modules-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
 
           echo "📁 Verified files in /opt/kernel/:"
           ls -l /opt/kernel/
