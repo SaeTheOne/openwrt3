@@ -161,13 +161,15 @@ jobs:
         if: ${{ steps.check_release.outputs.upload == 'true' }}
         uses: actions/download-artifact@v4
         with:
-          name: openwrt-packed-image
+          pattern: "*-packed-image"
+          merge-multiple: true
 
       - name: Download original rootfs
         if: ${{ steps.check_release.outputs.upload == 'true' }}
         uses: actions/download-artifact@v4
         with:
-          name: openwrt-rootfs-for-packing
+          pattern: "*.tar.gz"
+          merge-multiple: true
 
       - name: Generate release tag
         if: ${{ steps.check_release.outputs.upload == 'true' }}
@@ -183,8 +185,8 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           files: |
-            openwrt-packed-image/*.img
-            openwrt-rootfs-for-packing/*.tar.gz
+            */*-packed-image/*.img
+            */*.tar.gz
           body: |
             Built from ImmortalWrt `${{ env.REPO_BRANCH }}`
             Package SoC: s905d
