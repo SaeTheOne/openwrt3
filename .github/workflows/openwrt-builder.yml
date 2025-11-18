@@ -335,6 +335,7 @@ jobs:
             Built from OpenWrt snapshot (armsr/armv8)
             Source: ${{ env.SNAPSHOT_BASE_URL }}
             Date: $(date +"%Y-%m-%d %H:%M:%S")
+---
 name: OpenWrt Snapshot Source Builder
 
 on:
