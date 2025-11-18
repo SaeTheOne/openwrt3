@@ -10,12 +10,13 @@ jobs:
       - name: Download test rootfs
         run: |
           URL="https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
-          wget -O test-rootfs.tar.gz "$URL"
+          ORIGINAL_NAME=$(basename "$URL")
+          wget -O "$ORIGINAL_NAME" "$URL"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-rootfs-for-packing
-          path: test-rootfs.tar.gz
+          path: immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz
 
   pack:
     needs: prepare
