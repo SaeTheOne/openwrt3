@@ -18,12 +18,11 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   SNAPSHOT_BASE_URL: https://downloads.openwrt.org/snapshots/targets/armsr/armv8
-  SNAPSHOT_BASE_URL: https://downloads.openwrt.org/snapshots/targets/armsr/armv8
 
 jobs:
   Build:
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
+    if: false
 
     steps:
       - name: Checkout
@@ -156,7 +155,7 @@ jobs:
 
   Snapshot:
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
+    if: false
 
     steps:
       - name: Checkout
@@ -195,7 +194,7 @@ jobs:
 
   SnapshotImageBuilder:
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
+    if: false
     env:
       BASE_URL: ${{ env.SNAPSHOT_BASE_URL }}
     steps:
@@ -249,12 +248,14 @@ jobs:
 
   PackSnapshotIB:
     needs: SnapshotImageBuilder
+    if: false
     uses: ./.github/workflows/pack-image.yml
     secrets: inherit
 
   ReleaseSnapshotIB:
     needs: [SnapshotImageBuilder, PackSnapshotIB]
     runs-on: ubuntu-22.04
+    if: false
     steps:
       - name: Checkout
         uses: actions/checkout@main
@@ -292,12 +293,14 @@ jobs:
 
   PackSnapshot:
     needs: Snapshot
+    if: false
     uses: ./.github/workflows/pack-image.yml
     secrets: inherit
 
   ReleaseSnapshot:
     needs: [Snapshot, PackSnapshot]
     runs-on: ubuntu-22.04
+    if: false
     steps:
       - name: Checkout
         uses: actions/checkout@main
