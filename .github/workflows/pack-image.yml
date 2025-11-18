@@ -1,21 +1,16 @@
-# .github/workflows/pack-image.yml
+---
 name: 📦 Pack OpenWrt/ImmortalWrt Image
-
 on:
   workflow_call:
     inputs:
       rootfs_url:
-        description: 'URL to the rootfs tarball (e.g., from GitHub Releases)'
+        description: URL to the rootfs tarball (e.g., from GitHub Releases)
         required: true
         type: string
       whoami_content:
-        description: 'Content of the whoami file for openwrt_packit'
+        description: Content of the whoami file for openwrt_packit
         required: true
         type: string
-    secrets:
-      GITHUB_TOKEN:
-        required: false  # only needed if downloading private repos
-
 jobs:
   pack:
     runs-on: ubuntu-22.04
@@ -25,7 +20,6 @@ jobs:
         with:
           repository: unifreq/openwrt_packit
           path: .
-
       - name: Download and smart-rename rootfs
         run: |
           URL="${{ inputs.rootfs_url }}"
@@ -35,7 +29,6 @@ jobs:
           ORIGINAL_NAME=$(basename "$URL")
           echo "Original filename: $ORIGINAL_NAME"
 
-          # Case-insensitive check for openwrt prefix
           if [[ "${ORIGINAL_NAME,,}" == openwrt-* ]]; then
             FINAL_NAME="$ORIGINAL_NAME"
             echo "✅ Already OpenWrt-style, keeping name."
@@ -46,19 +39,17 @@ jobs:
 
           mv downloaded-rootfs.tar.gz "$FINAL_NAME"
           echo "ROOTFS_FILE=$FINAL_NAME" >> $GITHUB_ENV
-
       - name: Write whoami file
         run: |
-          echo '${{ inputs.whoami_content }}' > whoami
-          cat whoami
-
+          cat > whoami <<EOF
+          ${{ inputs.whoami_content }}
+          EOF
       - name: Run packing script
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
           echo "📦 Packing image using: $ROOTFS_FILE"
           sudo cp "$ROOTFS_FILE" .
           sudo ./mk_s905d_n1.sh _test
-
       - name: Upload packed image(s)
         uses: actions/upload-artifact@v4
         with:
