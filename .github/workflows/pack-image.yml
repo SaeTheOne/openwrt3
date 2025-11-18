@@ -1,26 +1,38 @@
 name: 📦 Pack OpenWrt/ImmortalWrt Image
 
 on:
-  workflow_call: # 保持这一项，以便其他工作流可以调用此工作流
+  workflow_call:
     inputs:
       rootfs_url:
-        description: 'URL to the rootfs tarball (e.g., from GitHub Releases)'
-        required: true
+        description: '远程 rootfs 下载 URL（可选）'
+        required: false
+        type: string
+      rootfs_path:
+        description: '构建生成的 rootfs 路径（用于同仓调用时的提示，仅用于日志）'
+        required: false
         type: string
       whoami_content:
-        description: 'Content of the whoami file for openwrt_packit'
-        required: true
+        description: 'openwrt_packit 的 whoami 文件内容（可选）'
+        required: false
         type: string
-  workflow_dispatch: # 添加此项以允许手动触发
+      kernel_base_url:
+        description: '内核 tarball 基础 URL（默认为 SaeTheOne/openwrt3 flippy_kernel）'
+        required: false
+        type: string
+  workflow_dispatch:
     inputs:
       rootfs_url:
-        description: 'URL to the rootfs tarball (e.g., from GitHub Releases)'
-        required: true
+        description: '远程 rootfs 下载 URL（可选）'
+        required: false
         default: ''
       whoami_content:
-        description: 'Content of the whoami file for openwrt_packit'
-        required: true
+        description: 'openwrt_packit 的 whoami 文件内容（可选）'
+        required: false
         default: ''
+      kernel_base_url:
+        description: '内核 tarball 基础 URL（默认为 SaeTheOne/openwrt3 flippy_kernel）'
+        required: false
+        default: 'https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel'
 
 jobs:
   pack:
@@ -32,31 +44,76 @@ jobs:
           repository: unifreq/openwrt_packit
           path: .
 
-      - name: Download and smart-rename rootfs
-        run: |
-          URL="${{ inputs.rootfs_url }}"
-          echo "📥 Downloading rootfs from: $URL"
-          wget -O downloaded-rootfs.tar.gz "$URL"
-
-          ORIGINAL_NAME=$(basename "$URL")
-          echo "Original filename: $ORIGINAL_NAME"
-
-          if [[ "${ORIGINAL_NAME,,}" == openwrt-* ]]; then
-            FINAL_NAME="$ORIGINAL_NAME"
-            echo "✅ Already OpenWrt-style, keeping name."
-          else
-            FINAL_NAME="openwrt${ORIGINAL_NAME#*-}"
-            echo "🔄 Renamed to: $FINAL_NAME"
-          fi
-
-          mv downloaded-rootfs.tar.gz "$FINAL_NAME"
-          echo "ROOTFS_FILE=$FINAL_NAME" >> $GITHUB_ENV
-
       - name: Write whoami file
         run: |
-          cat > whoami <<EOF
-          ${{ inputs.whoami_content }}
-          EOF
+          if [ -n "${{ inputs.whoami_content }}" ]; then
+            cat > whoami <<EOF
+${{ inputs.whoami_content }}
+EOF
+          else
+            # 从调用仓库默认分支拉取 whoami（如失败则保持空）
+            REPO="${GITHUB_REPOSITORY}"
+            BRANCH="main"
+            URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/flippy_kernel/whoami"
+            echo "尝试获取 whoami: $URL"
+            curl -fsSL "$URL" -o whoami || true
+          fi
+
+          echo "当前 whoami 内容:"
+          cat whoami || true
+
+      - name: Prepare kernel files based on whoami
+        run: |
+          set -e
+          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' whoami | cut -d'=' -f2)
+          if [ -z "$KERNEL_VERSION" ]; then
+            echo "未在 whoami 中找到 KERNEL_VERSION"
+            exit 1
+          fi
+          BASE_URL="${{ inputs.kernel_base_url }}"
+          [ -z "$BASE_URL" ] && BASE_URL="https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel"
+          echo "使用内核版本: $KERNEL_VERSION"
+          echo "内核来源: $BASE_URL"
+          sudo mkdir -p /opt/kernel
+          cd /tmp
+          for f in \
+            "boot-$KERNEL_VERSION.tar.gz" \
+            "dtb-allwinner-$KERNEL_VERSION.tar.gz" \
+            "dtb-amlogic-$KERNEL_VERSION.tar.gz" \
+            "dtb-rockchip-$KERNEL_VERSION.tar.gz" \
+            "header-$KERNEL_VERSION.tar.gz" \
+            "modules-$KERNEL_VERSION.tar.gz"; do
+            echo "下载: $BASE_URL/$f"
+            curl -fsSL "$BASE_URL/$f" -o "$f"
+            sudo cp "$f" /opt/kernel/
+          done
+
+      - name: Download rootfs from URL
+        if: ${{ inputs.rootfs_url != '' }}
+        run: |
+          URL="${{ inputs.rootfs_url }}"
+          echo "📥 从 URL 下载 rootfs: $URL"
+          curl -fsSL "$URL" -o openwrt-armvirt-64-default-rootfs.tar.gz
+          echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
+
+      - name: Download rootfs artifact (fallback)
+        if: ${{ inputs.rootfs_url == '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: openwrt-rootfs-for-packing
+          path: ./artifact_rootfs
+
+      - name: Prepare rootfs from artifact
+        if: ${{ inputs.rootfs_url == '' }}
+        run: |
+          set -e
+          FILE=$(ls -1 ./artifact_rootfs/*.tar.gz | head -n1)
+          if [ -z "$FILE" ]; then
+            echo "❌ 未找到 rootfs artifact (*.tar.gz)"
+            exit 1
+          fi
+          cp "$FILE" openwrt-armvirt-64-default-rootfs.tar.gz
+          echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
 
       - name: Run packing script
         run: |
