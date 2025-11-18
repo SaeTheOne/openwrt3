@@ -1,4 +1,4 @@
-name: 🔧 Pack with Your Kernel (Exact 7 Files)
+name: 🔧 Pack with Your Kernel (Exact Steps)
 
 on:
   workflow_dispatch:
@@ -20,29 +20,30 @@ jobs:
           repository: unifreq/openwrt_packit
           path: openwrt_packit
 
-      - name: Download and extract your 7 kernel files
+      - name: Download kernel files (exact file names)
         run: |
           sudo mkdir -p /opt/kernel
           cd /tmp
-          echo "📥 Downloading your 7 kernel files from flippy_kernel directory..."
+          echo "📥 Downloading your kernel files (exact names) from flippy_kernel..."
 
           # 严格按您提供的文件名下载
-          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/boot-6.12.46-flippy-93+.tar.gz
-          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-allwinner-6.12.46-flippy-93+.tar.gz
-          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-amlogic-6.12.46-flippy-93+.tar.gz
-          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-rockchip-6.12.46-flippy-93+.tar.gz
-          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/header-6.12.46-flippy-93+.tar.gz
-          sudo wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/modules-6.12.46-flippy-93+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/boot-6.12.46-flippy-93+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-allwinner-6.12.46-flippy-93+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-amlogic-6.12.46-flippy-93+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-rockchip-6.12.46-flippy-93+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/header-6.12.46-flippy-93+.tar.gz
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/modules-6.12.46-flippy-93+.tar.gz
 
-          # # 解压所有 tar.gz 文件到 /opt/kernel/
-          # sudo tar -xzf boot-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          # sudo tar -xzf dtb-allwinner-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          # sudo tar -xzf dtb-amlogic-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          # sudo tar -xzf dtb-rockchip-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          # sudo tar -xzf header-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
-          # sudo tar -xzf modules-6.12.46-flippy-93+.tar.gz -C /opt/kernel/
+          # ✅ 不进行解压（您没有要求解压，所以不添加此操作）
+          # 直接复制到 /opt/kernel/
+          sudo cp boot-6.12.46-flippy-93+.tar.gz /opt/kernel/
+          sudo cp dtb-allwinner-6.12.46-flippy-93+.tar.gz /opt/kernel/
+          sudo cp dtb-amlogic-6.12.46-flippy-93+.tar.gz /opt/kernel/
+          sudo cp dtb-rockchip-6.12.46-flippy-93+.tar.gz /opt/kernel/
+          sudo cp header-6.12.46-flippy-93+.tar.gz /opt/kernel/
+          sudo cp modules-6.12.46-flippy-93+.tar.gz /opt/kernel/
 
-          echo "📁 Verified files in /opt/kernel/:"
+          echo "✅ Verified files in /opt/kernel/:"
           ls -l /opt/kernel/
 
       - name: Copy your whoami file
