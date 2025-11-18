@@ -1,16 +1,20 @@
 # .github/workflows/pack-image.yml
-name: Pack Image
+name: 📦 Pack OpenWrt/ImmortalWrt Image
 
 on:
   workflow_call:
     inputs:
       rootfs_url:
+        description: 'URL to the rootfs tarball (e.g., from GitHub Releases)'
         required: true
         type: string
       whoami_content:
-/XMLSchema::SimpleType(name='string', base='http://www.w3.org/2001/XMLSchema#string')
+        description: 'Content of the whoami file for openwrt_packit'
         required: true
         type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: false  # only needed if downloading private repos
 
 jobs:
   pack:
@@ -20,31 +24,44 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: unifreq/openwrt_packit
+          path: .
 
-      - name: Download and rename rootfs
+      - name: Download and smart-rename rootfs
         run: |
           URL="${{ inputs.rootfs_url }}"
-          wget -O downloaded.tar.gz "$URL"
-          ORIGINAL=$(basename "$URL")
-          if [[ "${ORIGINAL,,}" == openwrt-* ]]; then
-            FINAL="$ORIGINAL"
+          echo "📥 Downloading rootfs from: $URL"
+          wget -O downloaded-rootfs.tar.gz "$URL"
+
+          ORIGINAL_NAME=$(basename "$URL")
+          echo "Original filename: $ORIGINAL_NAME"
+
+          # Case-insensitive check for openwrt prefix
+          if [[ "${ORIGINAL_NAME,,}" == openwrt-* ]]; then
+            FINAL_NAME="$ORIGINAL_NAME"
+            echo "✅ Already OpenWrt-style, keeping name."
           else
-            FINAL="openwrt${ORIGINAL#*-}"
+            FINAL_NAME="openwrt${ORIGINAL_NAME#*-}"
+            echo "🔄 Renamed to: $FINAL_NAME"
           fi
-          mv downloaded.tar.gz "$FINAL"
-          echo "ROOTFS_FILE=$FINAL" >> $GITHUB_ENV
 
-      - name: Write whoami
-        run: echo '${{ inputs.whoami_content }}' > whoami
+          mv downloaded-rootfs.tar.gz "$FINAL_NAME"
+          echo "ROOTFS_FILE=$FINAL_NAME" >> $GITHUB_ENV
 
-      - name: Pack
+      - name: Write whoami file
+        run: |
+          echo '${{ inputs.whoami_content }}' > whoami
+          cat whoami
+
+      - name: Run packing script
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
+          echo "📦 Packing image using: $ROOTFS_FILE"
           sudo cp "$ROOTFS_FILE" .
           sudo ./mk_s905d_n1.sh _test
 
-      - name: Upload result
+      - name: Upload packed image(s)
         uses: actions/upload-artifact@v4
         with:
-          name: packed-image
+          name: openwrt-packed-image
           path: output/*.img
+          if-no-files-found: error
