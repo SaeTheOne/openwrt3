@@ -1,71 +1,136 @@
-name: Pack OpenWrt Image
+name: Pack ImmortalWrt with Custom Flippy Kernel
 
 on:
-  workflow_call:
+  workflow_dispatch:
 
 jobs:
   pack:
     runs-on: ubuntu-22.04
     steps:
-      # --- 克隆你的仓库 ---
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # --- 安装系统依赖 ---
-      - name: Install system dependencies
+      # --- 1. 安装系统依赖 ---
+      - name: Install required system packages
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            util-linux uuid-runtime parted dosfstools e2fsprogs btrfs-progs wget
+            util-linux uuid-runtime parted dosfstools e2fsprogs btrfs-progs wget curl
 
-      # --- 检查你的 flippy_kernel 目录 ---
-      - name: Verify flippy_kernel directory
-        run: |
-          if [ ! -d "flippy_kernel" ]; then
-            echo "❌ flippy_kernel directory not found!"
-            ls -la
+          LSBLK_VER=$(lsblk --version | grep -oE '[0-9]+\.[0-9]+')
+          if dpkg --compare-versions "$LSBLK_VER" lt "2.33"; then
+            echo "❌ lsblk version $LSBLK_VER is too old. Need >= 2.33."
             exit 1
           fi
-          echo "✅ flippy_kernel directory found."
-          ls -la flippy_kernel/
+          echo "✅ System dependencies installed."
 
-      # --- 创建符合 Action 预期的内核包 ---
-      # Action 会尝试下载 kernel-6.12.46.tar.gz
-      # 我们提前创建它，这样 wget -c 就不会去下载
-      - name: Create kernel package for openwrt_packit
+      # --- 2. 获取内核版本号 ---
+      - name: Fetch KERNEL_VERSION from whoami file
+        id: get_version
         run: |
-          echo "📦 Creating kernel package: kernel-6.12.46.tar.gz"
-          cd flippy_kernel
-          # 打包 Image, dtb, modules.tar.gz
-          # 注意：如果 modules.tar.gz 不存在，你需要先创建它
-          tar -czf ../kernel-6.12.46.tar.gz Image dtb modules.tar.gz
-          cd ..
-          ls -lh kernel-6.12.46.tar.gz
-          echo "✅ Created kernel-6.12.46.tar.gz"
-
-      # --- 确保 rootfs.tar.gz 存在 ---
-      - name: Verify rootfs
-        run: |
-          if [ ! -f "rootfs.tar.gz" ]; then
-            echo "❌ rootfs.tar.gz not found!"
+          VERSION=$(curl -s https://raw.githubusercontent.com/SaeTheOne/openwrt3/refs/heads/main/flippy_kernel/whoami | grep -oP 'KERNEL_VERSION=\K.*')
+          if [ -z "$VERSION" ]; then
+            echo "❌ Failed to extract KERNEL_VERSION"
             exit 1
           fi
-          echo "✅ Found rootfs.tar.gz"
+          echo "kernel_version=$VERSION" >> $GITHUB_OUTPUT
 
-      # --- 调用 openwrt_packit Action ---
-      # 关键：设置 KERNEL_VERSION_NAME 为 6.12.46
-      # Action 会尝试下载 kernel-6.12.46.tar.gz
-      # 但我们已经创建了它，所以 wget -c 会直接使用本地文件
-      - name: Package Armvirt as OpenWrt
-        uses: unifreq/openwrt_packit@master
-        env:
-          OPENWRT_ARMVIRT: openwrt/bin/targets/*/*/*.tar.gz
-          PACKAGE_SOC: s905d
-          KERNEL_VERSION_NAME: 6.12.46 # 👈 Action 会用这个值构造 URL
+      # --- 3. 下载内核文件到 /opt/kernel ---
+      - name: Download kernel files to /opt/kernel
+        run: |
+          VERSION="${{ steps.get_version.outputs.kernel_version }}"
+          BASE_URL="https://raw.githubusercontent.com/SaeTheOne/openwrt3/refs/heads/main/flippy_kernel"
+          sudo mkdir -p /opt/kernel
 
-      # --- 上传最终的打包镜像 ---
-      - name: Upload packed image as artifact
+          FILES=("Image" "modules.tar.gz" "s905d_s905x3_beikeyun.dtb")
+          for FILE in "${FILES[@]}"; do
+            echo "📥 Downloading $FILE"
+            sudo curl -L -o "/opt/kernel/$FILE" "$BASE_URL/$FILE"
+          done
+
+          # 创建 dtb 符号链接（供脚本使用）
+          sudo ln -sf /opt/kernel/s905d_s905x3_beikeyun.dtb /opt/kernel/dtb
+          echo "✅ Kernel ready in /opt/kernel"
+
+      # --- 4. 克隆 openwrt_packit ---
+      - name: Clone openwrt_packit
+        run: |
+          cd /opt
+          sudo git clone https://github.com/unifreq/openwrt_packit
+          echo "✅ Cloned openwrt_packit"
+          
+      - name: Create dynamic whoami
+        run: |
+          WHOAMI="SaeTheOne"
+          OPENWRT_VER="R$(date +%y.%m.%d)"
+          DISTRIB_DESCRIPTION="ImmortalWrt"
+          KERNEL_VERSION="${{ steps.get_version.outputs.kernel_version }}"
+          
+          echo "WHOAMI=$WHOAMI" > /opt/openwrt_packit/whoami
+          echo "OPENWRT_VER=$OPENWRT_VER" >> /opt/openwrt_packit/whoami
+          echo "DISTRIB_DESCRIPTION=$DISTRIB_DESCRIPTION" >> /opt/openwrt_packit/whoami
+          echo "KERNEL_VERSION=$KERNEL_VERSION" >> /opt/openwrt_packit/whoami
+          
+          echo "✅ Created whoami file:"
+          cat /opt/openwrt_packit/whoami
+          
+      # --- 5. 下载并处理 rootfs ---
+      - name: Download rootfs-generic artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rootfs-generic
+          path: /tmp/rootfs
+
+      - name: Rename immortalwrt rootfs to OpenWrt format
+        id: handle_rootfs
+        run: |
+          ROOTFS_FILE=$(find /tmp/rootfs -name "*-generic-rootfs.tar.gz" | head -n1)
+          if [ -z "$ROOTFS_FILE" ]; then
+            echo "❌ No *-generic-rootfs.tar.gz found!"
+            ls -la /tmp/rootfs/
+            exit 1
+          fi
+
+          BASE_NAME=$(basename "$ROOTFS_FILE")
+          echo "Original rootfs: $BASE_NAME"
+
+          # 复制到 openwrt_packit 目录，并重命名为标准格式
+          TARGET_ROOTFS="/opt/openwrt_packit/OpenWrt-armvirt-64-default-rootfs.tar.gz"
+          sudo cp "$ROOTFS_FILE" "$TARGET_ROOTFS"
+          echo "✅ Copied and renamed to OpenWrt-armvirt-64-default-rootfs.tar.gz"
+
+          # 记录原始前缀用于后续恢复
+          if [[ "$BASE_NAME" == immortalwrt* ]]; then
+            echo "is_immortalwrt=true" >> $GITHUB_OUTPUT
+            echo "original_prefix=immortalwrt" >> $GITHUB_OUTPUT
+          else
+            echo "is_immortalwrt=false" >> $GITHUB_OUTPUT
+          fi
+
+      # --- 6. 执行打包脚本 ---
+      - name: Run mk_s905d_n1.sh
+        run: |
+          cd /opt/openwrt_packit
+          sudo chmod +x mk_s905d_n1.sh
+          echo "🚀 Building image..."
+          sudo ./mk_s905d_n1.sh
+          echo "✅ Build completed."
+
+      # --- 7. 恢复为 immortalwrt 前缀并上传 ---
+      - name: Rename output image back to immortalwrt prefix
+        run: |
+          OUTPUT_DIR="/opt/openwrt_packit/output"
+          OPENWRT_IMG=$(find "$OUTPUT_DIR" -name "OpenWrt-*.img" | head -n1)
+          if [ -z "$OPENWRT_IMG" ]; then
+            echo "❌ No OpenWrt-*.img found in output!"
+            ls -la "$OUTPUT_DIR"
+            exit 1
+          fi
+
+          # 替换前缀
+          IMMORTALWRT_IMG="${OPENWRT_IMG//OpenWrt/immortalwrt}"
+          sudo mv "$OPENWRT_IMG" "$IMMORTALWRT_IMG"
+          echo "✅ Renamed to: $(basename "$IMMORTALWRT_IMG")"
+
+      - name: Upload final immortalwrt image
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-packed-image
-          path: immortalwrt-packed.img
+          path: /opt/openwrt_packit/output/immortalwrt-*.img
