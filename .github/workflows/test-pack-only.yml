@@ -23,4 +23,5 @@ jobs:
   pack:
     needs: download-and-pack
     uses: ./.github/workflows/pack-image.yml
+    with: {}  # 👈 关键！必须显式写 with（即使为空）
     secrets: inherit
