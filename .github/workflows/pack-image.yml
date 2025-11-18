@@ -47,9 +47,8 @@ jobs:
       - name: Write whoami file
         run: |
           if [ -n "${{ inputs.whoami_content }}" ]; then
-            cat > whoami <<EOF
-${{ inputs.whoami_content }}
-EOF
+            CONTENT="${{ inputs.whoami_content }}"
+            printf "%s\n" "$CONTENT" > whoami
           else
             # 从调用仓库默认分支拉取 whoami（如失败则保持空）
             REPO="${GITHUB_REPOSITORY}"
