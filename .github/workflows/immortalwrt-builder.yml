@@ -114,13 +114,13 @@ jobs:
       if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
       run: |
         cd immortalwrt/bin/targets/*/*
-        ROOTFS=$(find . -name "*-generic-rootfs.tar.gz" | head -n1)
+        ROOTFS=$(find "$PWD" -name "*-generic-rootfs.tar.gz" | head -n1)
         if [ -z "$ROOTFS" ]; then
           echo "❌ No *-generic-rootfs.tar.gz found!"
           exit 1
         fi
-        echo "rootfs_path=$PWD/$ROOTFS" >> $GITHUB_OUTPUT
         BASENAME=$(basename "$ROOTFS")
+        echo "rootfs_path=$ROOTFS" >> $GITHUB_OUTPUT
         echo "rootfs_basename=$BASENAME" >> $GITHUB_OUTPUT
         echo "firmware_path=$PWD" >> $GITHUB_OUTPUT
         echo "✅ Found rootfs: $ROOTFS"
