@@ -1,0 +1,53 @@
+name: 🔧 Test Pack Only (Hardcoded RootFS)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pack:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download and smart-rename rootfs
+        run: |
+          URL="https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
+          echo "📥 Downloading rootfs from: $URL"
+          wget -O downloaded.tar.gz "$URL"
+
+          ORIGINAL_NAME=$(basename "$URL")
+          echo "Original filename: $ORIGINAL_NAME"
+
+          if [[ "${ORIGINAL_NAME,,}" == openwrt-* ]]; then
+            FINAL_NAME="$ORIGINAL_NAME"
+          else
+            FINAL_NAME="openwrt${ORIGINAL_NAME#*-}"
+          fi
+
+          mv downloaded.tar.gz "$FINAL_NAME"
+          echo "ROOTFS_FILE=$FINAL_NAME" >> $GITHUB_ENV
+          ls -lh "$FINAL_NAME"
+
+      - name: Checkout openwrt_packit
+        uses: actions/checkout@v4
+        with:
+          repository: unifreq/openwrt_packit
+          path: openwrt_packit
+
+      - name: Create whoami file
+        run: |
+          echo "WHOAMI=SaeTheOne" > openwrt_packit/whoami
+          echo "DISTRIB_DESCRIPTION=ImmortalWrt" >> openwrt_packit/whoami
+          echo "OPENWRT_VER=24.10.4" >> openwrt_packit/whoami
+
+      - name: Copy rootfs into packit dir
+        run: cp "${{ env.ROOTFS_FILE }}" openwrt_packit/
+
+      - name: Run packing script
+        working-directory: openwrt_packit
+        run: sudo ./mk_s905d_n1.sh _test
+
+      - name: Upload packed image
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-packed-image
+          path: openwrt_packit/output/*.img
+          if-no-files-found: error
