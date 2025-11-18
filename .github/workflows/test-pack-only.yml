@@ -1,47 +1,50 @@
-# .github/workflows/test-pack-only.yml
-name: 🔧 Test Pack Only (Hardcoded RootFS)
+# .github/workflows/pack-image.yml
+name: Pack Image
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_call:
+    inputs:
+      rootfs_url:
+        required: true
+        type: string
+      whoami_content:
+/XMLSchema::SimpleType(name='string', base='http://www.w3.org/2001/XMLSchema#string')
+        required: true
+        type: string
 
 jobs:
-  download-and-pack:
+  pack:
     runs-on: ubuntu-22.04
     steps:
-      - name: Download and smart-rename rootfs (only prefix)
-        run: |
-          URL="https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
-          
-          echo "📥 Downloading rootfs..."
-          wget -O rootfs-downloaded.tar.gz "$URL"
-          
-          # 提取原始文件名（从 URL）
-          ORIGINAL_NAME=$(basename "$URL")
-          echo "Original filename: $ORIGINAL_NAME"
-          
-          # 判断是否 already starts with 'openwrt-' (case-insensitive)
-          if [[ "${ORIGINAL_NAME,,}" == openwrt-* ]]; then
-              FINAL_NAME="$ORIGINAL_NAME"
-              echo "✅ Already OpenWrt-style, keeping as-is."
-          else
-              # Replace everything before the first '-' with 'openwrt'
-              FINAL_NAME="openwrt${ORIGINAL_NAME#*-}"
-              echo "🔄 Renamed to: $FINAL_NAME"
-          fi
-          
-          # Rename the downloaded file
-          mv rootfs-downloaded.tar.gz "$FINAL_NAME"
-          
-          ls -lh "$FINAL_NAME"
+      - name: Checkout openwrt_packit
+        uses: actions/checkout@v4
+        with:
+          repository: unifreq/openwrt_packit
 
-      - name: Upload as artifact
+      - name: Download and rename rootfs
+        run: |
+          URL="${{ inputs.rootfs_url }}"
+          wget -O downloaded.tar.gz "$URL"
+          ORIGINAL=$(basename "$URL")
+          if [[ "${ORIGINAL,,}" == openwrt-* ]]; then
+            FINAL="$ORIGINAL"
+          else
+            FINAL="openwrt${ORIGINAL#*-}"
+          fi
+          mv downloaded.tar.gz "$FINAL"
+          echo "ROOTFS_FILE=$FINAL" >> $GITHUB_ENV
+
+      - name: Write whoami
+        run: echo '${{ inputs.whoami_content }}' > whoami
+
+      - name: Pack
+        run: |
+          ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
+          sudo cp "$ROOTFS_FILE" .
+          sudo ./mk_s905d_n1.sh _test
+
+      - name: Upload result
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-rootfs-for-packing
-          path: ./rootfs.tar.gz
-
-  pack:
-    needs: download-and-pack
-    uses: ./.github/workflows/pack-image.yml
-    with: {}  # 👈 关键！必须显式写 with（即使为空）
-    secrets: inherit
+          name: packed-image
+          path: output/*.img
