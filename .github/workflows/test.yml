@@ -46,7 +46,7 @@ jobs:
           sudo cp /tmp/whoami openwrt_packit/whoami  # ✅ 正确路径：openwrt_packit/whoami
 
       - name: Copy rootfs into packit dir
-        run: cp "${{ env.ROOTFS_FILE }}" openwrt_packit/
+        run: cp "${{ env.ROOTFS_FILE }}" openwrt_packit/tmp/  # ✅ 关键修正
 
       - name: Run packing script
         working-directory: openwrt_packit
