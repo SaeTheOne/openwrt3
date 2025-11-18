@@ -26,7 +26,7 @@ jobs:
           cd /tmp
           echo "📥 Downloading your kernel files (exact names) from flippy_kernel..."
 
-          # 严格按您提供的文件名下载
+          # 使用您提供的文件名（与您的文件完全一致）
           wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/boot-6.12.46-flippy-93+.tar.gz
           wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-allwinner-6.12.46-flippy-93+.tar.gz
           wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/dtb-amlogic-6.12.46-flippy-93+.tar.gz
@@ -34,8 +34,6 @@ jobs:
           wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/header-6.12.46-flippy-93+.tar.gz
           wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/modules-6.12.46-flippy-93+.tar.gz
 
-          # ✅ 不进行解压（您没有要求解压，所以不添加此操作）
-          # 直接复制到 /opt/kernel/
           sudo cp boot-6.12.46-flippy-93+.tar.gz /opt/kernel/
           sudo cp dtb-allwinner-6.12.46-flippy-93+.tar.gz /opt/kernel/
           sudo cp dtb-amlogic-6.12.46-flippy-93+.tar.gz /opt/kernel/
@@ -43,18 +41,11 @@ jobs:
           sudo cp header-6.12.46-flippy-93+.tar.gz /opt/kernel/
           sudo cp modules-6.12.46-flippy-93+.tar.gz /opt/kernel/
 
-          echo "✅ Verified files in /opt/kernel/:"
-          ls -l /opt/kernel/
-
       - name: Copy your whoami file
         run: |
-          # 下载 whoami 文件到临时目录
+          # 直接使用您提供的 whoami 文件
           wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/whoami -O /tmp/whoami
-          
-          # 创建正确的目录（必须在 /opt/ 下）
           sudo mkdir -p /opt/openwrt_packit
-          
-          # 将 whoami 放到正确位置
           sudo cp /tmp/whoami /opt/openwrt_packit/whoami
 
       - name: Copy rootfs into packit dir
