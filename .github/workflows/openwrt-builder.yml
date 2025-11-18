@@ -25,6 +25,13 @@ jobs:
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
+      - name: Ensure tmp is writable and set TMPDIR
+        run: |
+          sudo chmod 1777 /tmp
+          sudo mkdir -p /workdir/tmp
+          sudo chown $USER:$GROUPS /workdir/tmp
+          echo "TMPDIR=/workdir/tmp" >> $GITHUB_ENV
+
       - name: Clone source
         working-directory: /workdir
         run: |
