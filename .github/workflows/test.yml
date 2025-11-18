@@ -48,7 +48,14 @@ jobs:
 
       - name: Copy your whoami file
         run: |
-          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/whoami -O openwrt_packit/whoami
+          # 下载 whoami 文件到临时目录
+          wget https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel/whoami -O /tmp/whoami
+          
+          # 创建正确的目录（必须在 /opt/ 下）
+          sudo mkdir -p /opt/openwrt_packit
+          
+          # 将 whoami 放到正确位置
+          sudo cp /tmp/whoami /opt/openwrt_packit/whoami
 
       - name: Copy rootfs into packit dir
         run: cp "${{ env.ROOTFS_FILE }}" openwrt_packit/
