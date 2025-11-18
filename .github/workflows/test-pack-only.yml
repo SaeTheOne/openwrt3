@@ -12,6 +12,7 @@ jobs:
         run: |
           echo "📥 Downloading rootfs..."
           wget -O rootfs.tar.gz "https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
+          mv immortalwrt-rootfs.tar.gz openwrt-armvirt-64-generic-rootfs.tar.gz
           ls -lh rootfs.tar.gz
 
       - name: Upload as artifact
