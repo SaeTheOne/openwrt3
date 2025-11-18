@@ -133,6 +133,10 @@ jobs:
             echo "whoami:";
             cat whoami;
           } > rootfs-meta.txt
+          BASE=${ORIGINAL_NAME%.tar.gz}
+          BASE=${BASE%-generic-rootfs}
+          BASE=${BASE%-rootfs}
+          echo "PACKED_ARTIFACT_NAME=${BASE}-packed-image" >> $GITHUB_ENV
 
       - name: Upload rootfs metadata
         uses: actions/upload-artifact@v4
@@ -169,6 +173,6 @@ jobs:
       - name: Upload packed image(s)
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-packed-image
+          name: ${{ env.PACKED_ARTIFACT_NAME }}
           path: output/*.img
           if-no-files-found: error
