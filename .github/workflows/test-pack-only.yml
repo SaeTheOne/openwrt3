@@ -8,12 +8,31 @@ jobs:
   download-and-pack:
     runs-on: ubuntu-22.04
     steps:
-      - name: Download rootfs from hardcoded URL
+      - name: Download and smart-rename rootfs (only prefix)
         run: |
+          URL="https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
+          
           echo "📥 Downloading rootfs..."
-          wget -O rootfs.tar.gz "https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
-          mv immortalwrt-rootfs.tar.gz openwrt-armvirt-64-generic-rootfs.tar.gz
-          ls -lh rootfs.tar.gz
+          wget -O rootfs-downloaded.tar.gz "$URL"
+          
+          # 提取原始文件名（从 URL）
+          ORIGINAL_NAME=$(basename "$URL")
+          echo "Original filename: $ORIGINAL_NAME"
+          
+          # 判断是否 already starts with 'openwrt-' (case-insensitive)
+          if [[ "${ORIGINAL_NAME,,}" == openwrt-* ]]; then
+              FINAL_NAME="$ORIGINAL_NAME"
+              echo "✅ Already OpenWrt-style, keeping as-is."
+          else
+              # Replace everything before the first '-' with 'openwrt'
+              FINAL_NAME="openwrt${ORIGINAL_NAME#*-}"
+              echo "🔄 Renamed to: $FINAL_NAME"
+          fi
+          
+          # Rename the downloaded file
+          mv rootfs-downloaded.tar.gz "$FINAL_NAME"
+          
+          ls -lh "$FINAL_NAME"
 
       - name: Upload as artifact
         uses: actions/upload-artifact@v4
