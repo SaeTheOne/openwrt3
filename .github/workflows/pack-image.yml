@@ -119,6 +119,27 @@ jobs:
           mkdir -p tmp
           cp -f openwrt-armvirt-64-default-rootfs.tar.gz tmp/
 
+      - name: Record rootfs metadata
+        run: |
+          if [ -n "${{ inputs.rootfs_url }}" ]; then
+            ORIGINAL_NAME=$(basename "${{ inputs.rootfs_url }}")
+          else
+            ORIGINAL_NAME=$(basename $(ls -1 ./artifact_rootfs/*.tar.gz | head -n1))
+          fi
+          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' whoami | cut -d'=' -f2)
+          {
+            echo "original_rootfs_name=$ORIGINAL_NAME";
+            echo "kernel_version=$KERNEL_VERSION";
+            echo "whoami:";
+            cat whoami;
+          } > rootfs-meta.txt
+
+      - name: Upload rootfs metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-rootfs-for-packing-meta
+          path: rootfs-meta.txt
+
       - name: Run packing script
         working-directory: .
         run: |
