@@ -1,16 +1,27 @@
----
 name: 📦 Pack OpenWrt/ImmortalWrt Image
+
 on:
-  workflow_call:
+  workflow_call: # 保持这一项，以便其他工作流可以调用此工作流
     inputs:
       rootfs_url:
-        description: URL to the rootfs tarball (e.g., from GitHub Releases)
+        description: 'URL to the rootfs tarball (e.g., from GitHub Releases)'
         required: true
         type: string
       whoami_content:
-        description: Content of the whoami file for openwrt_packit
+        description: 'Content of the whoami file for openwrt_packit'
         required: true
         type: string
+  workflow_dispatch: # 添加此项以允许手动触发
+    inputs:
+      rootfs_url:
+        description: 'URL to the rootfs tarball (e.g., from GitHub Releases)'
+        required: true
+        default: ''
+      whoami_content:
+        description: 'Content of the whoami file for openwrt_packit'
+        required: true
+        default: ''
+
 jobs:
   pack:
     runs-on: ubuntu-22.04
@@ -20,6 +31,7 @@ jobs:
         with:
           repository: unifreq/openwrt_packit
           path: .
+
       - name: Download and smart-rename rootfs
         run: |
           URL="${{ inputs.rootfs_url }}"
@@ -39,17 +51,20 @@ jobs:
 
           mv downloaded-rootfs.tar.gz "$FINAL_NAME"
           echo "ROOTFS_FILE=$FINAL_NAME" >> $GITHUB_ENV
+
       - name: Write whoami file
         run: |
           cat > whoami <<EOF
           ${{ inputs.whoami_content }}
           EOF
+
       - name: Run packing script
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
           echo "📦 Packing image using: $ROOTFS_FILE"
           sudo cp "$ROOTFS_FILE" .
           sudo ./mk_s905d_n1.sh _test
+
       - name: Upload packed image(s)
         uses: actions/upload-artifact@v4
         with:
