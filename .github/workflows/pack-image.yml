@@ -120,10 +120,10 @@ jobs:
           cp -f openwrt-armvirt-64-default-rootfs.tar.gz tmp/
 
       - name: Run packing script
+        working-directory: .
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
           echo "📦 Packing image using: $ROOTFS_FILE"
-          if [ ! -f "./openwrt-armvirt-64-default-rootfs.tar.gz" ]; then sudo cp "$ROOTFS_FILE" ./openwrt-armvirt-64-default-rootfs.tar.gz; fi
           sudo ./mk_s905d_n1.sh _test
 
       - name: Upload packed image(s)
