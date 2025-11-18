@@ -1,12 +1,12 @@
-name: OpenWrt Builder
+x_name: OpenWrt Builder
 
-on:
+x_on:
   repository_dispatch:
   workflow_dispatch:
   schedule:
     - cron: "0 2 * * *"  # 可选：每日UTC 2点自动构建（北京时间10点）
 
-env:
+x_env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt/
   REPO_BRANCH: v24.10.4
   FEEDS_CONF: feeds.conf.default
@@ -19,7 +19,7 @@ env:
   TZ: Asia/Shanghai
   SNAPSHOT_BASE_URL: https://downloads.openwrt.org/snapshots/targets/armsr/armv8
 
-jobs:
+x_jobs:
   Build:
     runs-on: ubuntu-22.04
     if: false
