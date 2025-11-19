@@ -93,8 +93,10 @@ jobs:
         run: |
           URL="${{ inputs.rootfs_url }}"
           echo "📥 从 URL 下载 rootfs: $URL"
-          curl -fsSL "$URL" -o openwrt-armvirt-64-default-rootfs.tar.gz
-          echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
+          # 从URL中提取原始文件名，保留文件的原始名称
+          ORIGINAL_NAME=$(basename "$URL")
+          curl -fsSL "$URL" -o "$ORIGINAL_NAME"
+          echo "ROOTFS_FILE=$ORIGINAL_NAME" >> $GITHUB_ENV
 
       - name: Download rootfs artifact (fallback)
         if: ${{ inputs.rootfs_url == '' }}
@@ -113,13 +115,15 @@ jobs:
             echo "❌ 未找到 rootfs artifact (*.tar.gz)"
             exit 1
           fi
-          cp "$FILE" openwrt-armvirt-64-default-rootfs.tar.gz
-          echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
+          # 保留原始文件名，不进行重命名
+          ORIGINAL_NAME=$(basename "$FILE")
+          cp "$FILE" "$ORIGINAL_NAME"
+          echo "ROOTFS_FILE=$ORIGINAL_NAME" >> $GITHUB_ENV
 
       - name: Mirror rootfs into tmp directory (compat)
         run: |
           mkdir -p tmp
-          cp -f openwrt-armvirt-64-default-rootfs.tar.gz tmp/
+          cp -f "${{ env.ROOTFS_FILE }}" tmp/
 
       - name: Record rootfs metadata
         run: |

@@ -191,13 +191,15 @@ jobs:
           set -e
           FILE=$(find ./artifact_rootfs -type f -name "*.tar.gz" | head -n1)
           if [ -z "$FILE" ]; then echo "❌ 未找到 rootfs artifact (*.tar.gz)"; exit 1; fi
-          cp "$FILE" openwrt-armvirt-64-default-rootfs.tar.gz
-          echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
+          # 保留原始文件名，不进行重命名
+          ORIGINAL_NAME=$(basename "$FILE")
+          cp "$FILE" "$ORIGINAL_NAME"
+          echo "ROOTFS_FILE=$ORIGINAL_NAME" >> $GITHUB_ENV
 
       - name: Mirror rootfs into tmp
         run: |
           mkdir -p tmp
-          cp -f openwrt-armvirt-64-default-rootfs.tar.gz tmp/
+          cp -f "${{ env.ROOTFS_FILE }}" tmp/
 
       - name: Record rootfs metadata
         run: |
