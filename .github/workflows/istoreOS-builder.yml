@@ -222,6 +222,10 @@ jobs:
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
           echo "📦 使用 $ROOTFS_FILE 进行打包"
+          # 确保临时目录不存在
+          sudo rm -rf tmp/* 2>/dev/null || true
+          # 修改mk_s905d_n1.sh脚本，确保mkdir命令使用-p参数
+          sed -i 's/mkdir /mkdir -p /g' ./mk_s905d_n1.sh
           sudo ./mk_s905d_n1.sh _test
 
       - name: Upload packed image(s)
