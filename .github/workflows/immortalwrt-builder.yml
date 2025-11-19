@@ -274,8 +274,9 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           files: |
-            */*-packed-image/*.img
-            ./artifact_rootfs/*.tar.gz
+            */output/*.img
+            *-packed-image/*.img
+            *.tar.gz
           body: |
             Built from ImmortalWrt `${{ env.REPO_BRANCH }}`
             Package SoC: s905d
