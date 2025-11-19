@@ -17,7 +17,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ROOTFS_ORIGINAL_NAME }}
-          path: immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz
+          path: ${{ env.ROOTFS_ORIGINAL_NAME }}
 
   pack:
     needs: prepare
