@@ -1,4 +1,4 @@
-# .github/workflows/immortalwrt-builder.yml
+# .github/workflows/istoreOS-builder.yml
 #
 # https://github.com/P3TERX/Actions-immortalwrt
 # Modified to call external pack-image workflow
@@ -278,8 +278,8 @@ jobs:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           files: |
             */*-packed-image/*.img
-            */*.tar.gz
+            ./artifact_rootfs/*.tar.gz
           body: |
-            Built from ImmortalWrt `${{ env.REPO_BRANCH }}`
+            Built from iStoreOS `${{ env.REPO_BRANCH }}`
             Package SoC: s905d
             Kernel: 6.12.46

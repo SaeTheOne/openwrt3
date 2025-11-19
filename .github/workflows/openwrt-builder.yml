@@ -134,4 +134,4 @@ jobs:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           files: |
             */*-packed-image/*.img
-            */*.tar.gz
+            ./artifact_rootfs/*.tar.gz
