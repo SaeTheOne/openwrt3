@@ -11,7 +11,8 @@ name: immortalwrt Builder
 on:
   workflow_dispatch:
   repository_dispatch:
-
+# https://mirror.nju.edu.cn/immortalwrt/releases/24.10.4/targets/armsr/armv8/config.buildinfo
+# https://mirror.nju.edu.cn/immortalwrt/snapshots/targets/armsr/armv8/config.buildinfo
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt/
   REPO_BRANCH: v24.10.4
@@ -73,7 +74,37 @@ jobs:
     - name: Load custom configuration
       run: |
         [ -e files ] && mv files immortalwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE immortalwrt/.config
+        
+        # 检查CONFIG_FILE是否存在
+        if [ -e "$CONFIG_FILE" ]; then
+          echo "✅ 找到自定义配置文件 $CONFIG_FILE"
+          mv "$CONFIG_FILE" immortalwrt/.config
+        else
+          echo "❌ 未找到自定义配置文件 $CONFIG_FILE，将根据REPO_BRANCH下载配置文件"
+          cd immortalwrt
+          
+          # 检查REPO_BRANCH是否以v开头
+          if [[ "$REPO_BRANCH" == v* ]]; then
+            # 提取版本号（去掉v前缀）
+            VERSION=${REPO_BRANCH#v}
+            CONFIG_URL="https://mirror.nju.edu.cn/immortalwrt/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
+            echo "🔗 正在从版本发布地址下载: $CONFIG_URL"
+          else
+            CONFIG_URL="https://mirror.nju.edu.cn/immortalwrt/snapshots/targets/armsr/armv8/config.buildinfo"
+            echo "🔗 正在从快照地址下载: $CONFIG_URL"
+          fi
+          
+          # 下载config.buildinfo
+          wget -O .config "$CONFIG_URL" || {
+            echo "❌ 下载配置文件失败！"
+            exit 1
+          }
+          echo "✅ 成功下载配置文件"
+          
+          # 返回上级目录以执行DIY脚本
+          cd ..
+        fi
+        
         chmod +x $DIY_P2_SH
         cd immortalwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
