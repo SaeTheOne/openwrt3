@@ -46,7 +46,7 @@ jobs:
 
       - name: Write whoami file
         run: |
-           if [ -n "${{ inputs.whoami_content }}" ]; then
+          if [ -n "${{ inputs.whoami_content }}" ]; then
             CONTENT="${{ inputs.whoami_content }}"
             printf "%s\n" "$CONTENT" > ./openwrt_packit/whoami
           else
