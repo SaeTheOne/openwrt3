@@ -203,13 +203,21 @@ jobs:
           echo "🔍 get_openwrt_rootfs_archive函数实现:"
           grep -n -A 20 "get_openwrt_rootfs_archive" ./mk_s905d_n1.sh || echo "未找到get_openwrt_rootfs_archive函数"
           
-          # 直接设置OPWRT_ROOTFS_GZ变量来覆盖函数的返回值
-          echo "🔧 直接设置OPWRT_ROOTFS_GZ环境变量"
-          export OPWRT_ROOTFS_GZ="${PWD}/tmp/rootfs.tar.gz"
-          echo "设置OPWRT_ROOTFS_GZ=$OPWRT_ROOTFS_GZ"
-          
           # 给脚本添加执行权限
           chmod +x ./mk_s905d_n1.sh
+          
+          # 关键修复：在脚本开头直接设置OPWRT_ROOTFS_GZ变量，绕过函数调用
+          ROOTFS_PATH="${PWD}/tmp/rootfs.tar.gz"
+          echo "🔧 在mk_s905d_n1.sh脚本开头设置OPWRT_ROOTFS_GZ=$ROOTFS_PATH"
+          sed -i '1i OPWRT_ROOTFS_GZ="'"$ROOTFS_PATH"'"' ./mk_s905d_n1.sh
+          
+          # 同时保留环境变量设置，双重保险
+          export OPWRT_ROOTFS_GZ="$ROOTFS_PATH"
+          echo "🔧 设置环境变量OPWRT_ROOTFS_GZ=$OPWRT_ROOTFS_GZ"
+          
+          # 显示修改后的脚本前几行，确认设置成功
+          echo "📝 修改后的脚本开头几行:"
+          head -n 10 ./mk_s905d_n1.sh
           
           # 运行打包脚本，添加调试输出
           echo "🚀 运行打包脚本..."
