@@ -172,7 +172,7 @@ jobs:
 
   pack:
     needs: build
-    uses: ./github/workflows/pack-image.yml@main
+    uses: ./.github/workflows/pack-image.yml@main
     with:
       rootfs_path: ${{ needs.build.outputs.rootfs_path }}
       kernel_base_url: https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel
