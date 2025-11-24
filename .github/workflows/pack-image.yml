@@ -46,7 +46,7 @@ jobs:
 
       - name: Write whoami file
         run: |
-          if [ -n "${{ inputs.whoami_content }}" ]; then
+           if [ -n "${{ inputs.whoami_content }}" ]; then
             CONTENT="${{ inputs.whoami_content }}"
             printf "%s\n" "$CONTENT" > ./openwrt_packit/whoami
           else
@@ -345,44 +345,8 @@ jobs:
                 else
                   # 创建一个基本的_common.sh文件作为备用
                   echo "⚠️  创建基本的_common.sh文件作为备用..."
-                  # 使用正确的here-document格式
-                  cat > ./lib/_common.sh << 'EOF'
-#!/bin/bash
-
-# 基本的_common.sh备用实现
-
-# 颜色定义
-RED="\033[0;31m"
-GREEN="\033[0;32m"
-YELLOW="\033[0;33m"
-BLUE="\033[0;34m"
-NC="\033[0m" # No Color
-
-echo_log() {
-    echo -e "${BLUE}[LOG]${NC} $1"
-}
-
-echo_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-echo_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-echo_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-# 检查文件是否存在
-check_file() {
-    if [ -f "$1" ]; then
-        return 0
-    else
-        return 1
-    fi
-}
-EOF
+                  # 使用无特殊字符的简化here-document格式
+                  printf '#!/bin/bash\n\n# 基本的_common.sh备用实现\n\necho_log() {\n    echo "[LOG] $1"\n}\n\necho_error() {\n    echo "[ERROR] $1"\n}\n\necho_warning() {\n    echo "[WARNING] $1"\n}\n\necho_success() {\n    echo "[SUCCESS] $1"\n}\n\n# 检查文件是否存在\ncheck_file() {\n    if [ -f "$1" ]; then\n        return 0\n    else\n        return 1\n    fi\n}\n' > ./lib/_common.sh
                   chmod +x ./lib/_common.sh
                   echo "✅ 已创建基本的_common.sh备用文件"
                 fi
