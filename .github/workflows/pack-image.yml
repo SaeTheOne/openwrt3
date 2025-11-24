@@ -187,19 +187,33 @@ jobs:
           cp -f ../$ROOTFS_FILE tmp/rootfs.tar.gz      # 最基础的名称
           cp -f ../$ROOTFS_FILE tmp/openwrt_rootfs.tar.gz  # 可能的默认名称
           cp -f ../$ROOTFS_FILE tmp/openwrt-armvirt-64-rootfs.tar.gz  # 架构相关名称
+          cp -f ../$ROOTFS_FILE ./tmp/openwrt_rootfs.tar.gz  # 当前目录下的tmp目录
+          cp -f ../$ROOTFS_FILE ./rootfs.tar.gz  # 直接复制到当前目录
           
           # 显示tmp目录内容，用于调试
-          echo "📂 tmp目录内容:" 
+          echo "📂 tmp目录内容:"
           ls -la tmp/
+          echo "📂 当前目录内容:"
+          ls -la
           
           # 修改mk_s905d_n1.sh脚本，确保mkdir命令使用-p参数
           sed -i 's/mkdir /mkdir -p /g' ./mk_s905d_n1.sh
           
-          # 显示脚本查找rootfs的逻辑，帮助诊断
-          grep -n "rootfs\|tar.gz" ./mk_s905d_n1.sh || echo "未找到明确的rootfs查找逻辑"
+          # 显示get_openwrt_rootfs_archive函数的实现，帮助诊断
+          echo "🔍 get_openwrt_rootfs_archive函数实现:"
+          grep -n -A 20 "get_openwrt_rootfs_archive" ./mk_s905d_n1.sh || echo "未找到get_openwrt_rootfs_archive函数"
           
-          # 运行打包脚本
-          sudo ./mk_s905d_n1.sh _test
+          # 直接设置OPWRT_ROOTFS_GZ变量来覆盖函数的返回值
+          echo "🔧 直接设置OPWRT_ROOTFS_GZ环境变量"
+          export OPWRT_ROOTFS_GZ="${PWD}/tmp/rootfs.tar.gz"
+          echo "设置OPWRT_ROOTFS_GZ=$OPWRT_ROOTFS_GZ"
+          
+          # 给脚本添加执行权限
+          chmod +x ./mk_s905d_n1.sh
+          
+          # 运行打包脚本，添加调试输出
+          echo "🚀 运行打包脚本..."
+          sudo -E ./mk_s905d_n1.sh _test 2>&1 | tee packing.log
           
           # 显示生成的img文件
           echo "📂 生成的img文件:" 
