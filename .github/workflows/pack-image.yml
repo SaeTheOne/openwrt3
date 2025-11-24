@@ -310,25 +310,27 @@ jobs:
           ls -la ./output/ 2>/dev/null || echo "output目录不存在"
           ls -la ./tmp/ 2>/dev/null || echo "tmp目录不存在"
           
-          # 尝试查找img文件的所有可能位置
-          IMG_FILE=$(find . -type f -name "*.img" 2>/dev/null | head -n1)
-          if [ -n "$IMG_FILE" ]; then
-            echo "✅ 找到img文件: $IMG_FILE"
-            # 使用找到的实际img文件路径
-            GENERATED_IMG="$IMG_FILE"
-          else
-            echo "❌ 未找到生成的img文件，尝试查找其他可能的输出文件..."
-            # 查找所有可能的压缩包或镜像文件
-            find . -type f -name "*.[iI][mM][gG]*" -o -name "*.tar.gz" | grep -v "rootfs" | head -10
+          # 重点：只在output目录下搜索生成的镜像文件
+          echo "🔍 在output目录下搜索生成的img文件..."
+          mkdir -p output  # 确保output目录存在
+          
+          # 优先在output目录下查找大的镜像文件
+          IMG_FILE=$(find ./output -name "*.img" -type f -size +100M 2>/dev/null | head -n 1)
+          
+          # 如果output目录下没找到大的img文件，尝试查找output目录下的任何img文件
+          if [ -z "$IMG_FILE" ]; then
+            echo "⚠️  在output目录下未找到大的img文件，尝试查找output目录下的任何img文件..."
+            IMG_FILE=$(find ./output -name "*.img" -type f 2>/dev/null | head -n 1)
           fi
           
-          # 检查是否生成了img文件（使用更可靠的检查方式）
+          # 输出output目录的详细内容，帮助调试
+          echo "📁 output目录内容详情："
+          ls -la ./output/
+          
           if [ -n "$IMG_FILE" ]; then
-            # 使用已经找到的img文件路径
+            echo "✅ 找到img文件: $IMG_FILE"
             # 重命名img文件为name1+日期+.img格式
             NEW_IMG_NAME="${NAME1}-${TODAY_DATE}.img"
-            # 确保output目录存在
-            mkdir -p output
             cp "$IMG_FILE" "output/$NEW_IMG_NAME"
             echo "✅ 已重命名img文件: $NEW_IMG_NAME"
             echo "FINAL_IMG_NAME=$NEW_IMG_NAME" >> $GITHUB_ENV
