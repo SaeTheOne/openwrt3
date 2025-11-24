@@ -11,8 +11,6 @@ name: immortalwrt Builder
 on:
   workflow_dispatch:
   repository_dispatch:
-# https://mirror.nju.edu.cn/immortalwrt/releases/24.10.4/targets/armsr/armv8/config.buildinfo
-# https://mirror.nju.edu.cn/immortalwrt/snapshots/targets/armsr/armv8/config.buildinfo
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt/
   REPO_BRANCH: v24.10.4
