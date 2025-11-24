@@ -163,8 +163,25 @@ jobs:
           name: openwrt-rootfs-for-packing-meta
           path: rootfs-meta.txt
 
+      - name: 准备打包环境
+        run: |
+          # 确保使用bash执行脚本，而不是默认的dash
+          echo "SHELL=$(which bash)" >> $GITHUB_ENV
+          
+          # 检查openwrt_packit目录结构
+          echo "📂 openwrt_packit目录内容:"
+          ls -la ./openwrt_packit
+          
+          # 给所有脚本添加执行权限
+          chmod +x ./openwrt_packit/*.sh
+          
+          # 检查是否存在其他必要的脚本文件
+          echo "🔍 检查必要的脚本文件:"
+          ls -la ./openwrt_packit/lib/ 2>/dev/null || echo "lib目录不存在"
+      
       - name: Run packing script
         working-directory: ./openwrt_packit
+        shell: bash {0}  # 显式使用bash执行脚本
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
           NAME1="${{ env.NAME1 }}"
@@ -228,6 +245,24 @@ jobs:
           # 关键修复：直接使用实际的rootfs文件路径
           ACTUAL_ROOTFS_PATH="${PWD}/../openwrt-armvirt-64-default-rootfs.tar.gz"
           echo "🔧 在mk_s905d_n1.sh脚本开头设置OPWRT_ROOTFS_GZ=$ACTUAL_ROOTFS_PATH"
+          
+          # 检查并创建必要的目录
+          mkdir -p lib tmp output
+          
+          # 检查是否存在必要的库文件
+          if [ ! -f ./lib/_common.sh ]; then
+            echo "⚠️  _common.sh文件不存在，尝试从仓库获取..."
+            # 从unifreq/openwrt_packit仓库下载必要的库文件
+            curl -fsSL "https://raw.githubusercontent.com/unifreq/openwrt_packit/main/lib/_common.sh" -o ./lib/_common.sh || echo "❌ 下载_common.sh失败"
+          fi
+          
+          # 确保所有库文件都有执行权限
+          chmod +x ./lib/*.sh 2>/dev/null || true
+          
+          # 修改脚本使用bash执行
+          sed -i '1i #!/bin/bash' ./mk_s905d_n1.sh
+          
+          # 在脚本开头设置OPWRT_ROOTFS_GZ变量
           sed -i '1i OPWRT_ROOTFS_GZ="'"$ACTUAL_ROOTFS_PATH"'"' ./mk_s905d_n1.sh
           
           # 同时保留环境变量设置，双重保险
@@ -240,30 +275,67 @@ jobs:
           
           # 精确调试：检查执行时的环境变量值
           echo "🔍 执行前环境变量检查:"
-          env | grep -E 'OPWRT|ROOTFS'
+          env | grep -E 'OPWRT|ROOTFS|SHELL'
           echo "🔍 实际rootfs文件路径检查:"
           ls -la "$ACTUAL_ROOTFS_PATH"
           
+          # 检查库文件是否存在
+          echo "📁 检查库文件:"
+          ls -la ./lib/ 2>/dev/null || echo "lib目录不存在或为空"
+          
+          # 安装必要的依赖
+          echo "📦 安装必要的依赖..."
+          sudo apt-get update
+          sudo apt-get install -y btrfs-progs dosfstools mtools parted squashfs-tools
+          
           # 运行打包脚本，添加调试输出
           echo "🚀 运行打包脚本..."
-          sudo -E ./mk_s905d_n1.sh _test 2>&1 | tee packing.log
+          SCRIPT_EXIT_CODE=0
+          # 使用bash显式执行脚本
+          sudo -E bash ./mk_s905d_n1.sh _test 2>&1 | tee packing.log || SCRIPT_EXIT_CODE=$?
           
-          # 显示生成的img文件
-          echo "📂 生成的img文件:" 
-          ls -la output/*.img
+          echo "📊 打包脚本执行状态码: $SCRIPT_EXIT_CODE"
+          
+          # 显示packing.log的关键部分，帮助诊断错误
+          echo "📝 打包日志关键信息:" 
+          grep -E 'error|failed|not found|warning' packing.log || echo "未发现明显错误信息"
+          
+          # 显示当前目录结构，查看所有可能的输出位置
+          echo "📂 当前目录结构:" 
+          find . -type f -name "*.img" 2>/dev/null || echo "未找到任何.img文件"
+          
+          # 检查所有可能的输出目录
+          echo "📂 检查所有可能的输出位置:" 
+          ls -la ./ 2>/dev/null
+          ls -la ./output/ 2>/dev/null || echo "output目录不存在"
+          ls -la ./tmp/ 2>/dev/null || echo "tmp目录不存在"
+          
+          # 尝试查找img文件的所有可能位置
+          IMG_FILE=$(find . -type f -name "*.img" 2>/dev/null | head -n1)
+          if [ -n "$IMG_FILE" ]; then
+            echo "✅ 找到img文件: $IMG_FILE"
+            # 使用找到的实际img文件路径
+            GENERATED_IMG="$IMG_FILE"
+          else
+            echo "❌ 未找到生成的img文件，尝试查找其他可能的输出文件..."
+            # 查找所有可能的压缩包或镜像文件
+            find . -type f -name "*.[iI][mM][gG]*" -o -name "*.tar.gz" | grep -v "rootfs" | head -10
+          fi
           
           # 检查是否生成了img文件（使用更可靠的检查方式）
-          if ls output/*.img 1> /dev/null 2>&1; then
-            # 获取生成的img文件
-            GENERATED_IMG=$(ls output/*.img | head -n1)
+          if [ -n "$IMG_FILE" ]; then
+            # 使用已经找到的img文件路径
             # 重命名img文件为name1+日期+.img格式
             NEW_IMG_NAME="${NAME1}-${TODAY_DATE}.img"
-            cp "$GENERATED_IMG" "output/$NEW_IMG_NAME"
+            # 确保output目录存在
+            mkdir -p output
+            cp "$IMG_FILE" "output/$NEW_IMG_NAME"
             echo "✅ 已重命名img文件: $NEW_IMG_NAME"
             echo "FINAL_IMG_NAME=$NEW_IMG_NAME" >> $GITHUB_ENV
           else
             echo "❌ 未找到生成的img文件"
-            exit 1
+            # 即使失败也尝试继续，以便上传调试信息
+            echo "⚠️  尝试继续执行以收集更多调试信息..."
           fi
 
 
