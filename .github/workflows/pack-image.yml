@@ -45,16 +45,16 @@ jobs:
           path: ./openwrt_packit
 
       - name: Write whoami file
+        env:
+          WHOAMI_URL: https://raw.githubusercontent.com/${{ github.repository }}/main/flippy_kernel/whoami
         run: |
           if [ -n "${{ inputs.whoami_content }}" ]; then
             CONTENT="${{ inputs.whoami_content }}"
             printf "%s\n" "$CONTENT" > ./openwrt_packit/whoami
           else
             # 从调用仓库默认分支拉取 whoami（如失败则保持空）
-            # 直接在run块中使用GitHub Actions表达式，避免shell变量替换问题
-            URL="https://raw.githubusercontent.com/${{ github.repository }}/main/flippy_kernel/whoami"
-            echo "尝试获取 whoami: $URL"
-            curl -fsSL "$URL" -o ./openwrt_packit/whoami || true
+            echo "尝试获取 whoami: $WHOAMI_URL"
+            curl -fsSL "$WHOAMI_URL" -o ./openwrt_packit/whoami || true
           fi
 
           echo "当前 whoami 内容:"
