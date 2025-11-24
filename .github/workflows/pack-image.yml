@@ -200,27 +200,27 @@ jobs:
           mkdir -p tmp
           
           # 检查rootfs文件是否存在并显示详细信息
-          echo "🔍 检查rootfs文件: ../$ROOTFS_FILE"
-          if [ -f "../$ROOTFS_FILE" ]; then
-            echo "✅ 文件存在，大小: $(du -h ../$ROOTFS_FILE | cut -f1)"
+          echo "🔍 检查rootfs文件: ./$ROOTFS_FILE"
+          if [ -f "./$ROOTFS_FILE" ]; then
+            echo "✅ 文件存在，大小: $(du -h ./$ROOTFS_FILE | cut -f1)"
           else
             echo "❌ 文件不存在！正在搜索所有可用的tar.gz文件..."
-            find .. -name "*.tar.gz" -type f | xargs ls -la
+            find . -name "*.tar.gz" -type f | xargs ls -la
           fi
           
           # 复制rootfs到openwrt_packit的tmp目录
-          cp -f ../$ROOTFS_FILE tmp/ || echo "❌ 复制文件失败！"
+          cp -f ./$ROOTFS_FILE tmp/ || echo "❌ 复制文件失败！"
           
           # 关键修复：创建脚本期望的多个rootfs文件名副本
           # 从错误信息看，脚本可能在寻找特定命名的rootfs文件
           ROOTFS_BASENAME=$(basename "$ROOTFS_FILE")
           
           # 复制到多个可能的位置和名称，确保脚本能找到
-          cp -f ../$ROOTFS_FILE tmp/rootfs.tar.gz      # 最基础的名称
-          cp -f ../$ROOTFS_FILE tmp/openwrt_rootfs.tar.gz  # 可能的默认名称
-          cp -f ../$ROOTFS_FILE tmp/openwrt-armvirt-64-rootfs.tar.gz  # 架构相关名称
-          cp -f ../$ROOTFS_FILE ./tmp/openwrt_rootfs.tar.gz  # 当前目录下的tmp目录
-          cp -f ../$ROOTFS_FILE ./rootfs.tar.gz  # 直接复制到当前目录
+          cp -f ./$ROOTFS_FILE tmp/rootfs.tar.gz      # 最基础的名称
+          cp -f ./$ROOTFS_FILE tmp/openwrt_rootfs.tar.gz  # 可能的默认名称
+          cp -f ./$ROOTFS_FILE tmp/openwrt-armvirt-64-rootfs.tar.gz  # 架构相关名称
+          cp -f ./$ROOTFS_FILE tmp/openwrt-rootfs.tar.gz  # 当前目录下的tmp目录
+          cp -f ./$ROOTFS_FILE ./rootfs.tar.gz  # 直接复制到当前目录
           
           # 显示tmp目录内容，用于调试
           echo "📂 tmp目录内容:"
