@@ -115,13 +115,22 @@ jobs:
             echo "❌ 未找到 rootfs artifact (*.tar.gz)"
             exit 1
           fi
-          # 完全保留原始文件名，不进行任何重命名操作
+          # 获取原始文件名
           ORIGINAL_NAME=$(basename "$FILE")
-          echo "📁 使用原始rootfs文件: $ORIGINAL_NAME"
-          cp "$FILE" "$ORIGINAL_NAME"
-          echo "ROOTFS_FILE=$ORIGINAL_NAME" >> $GITHUB_ENV
+          echo "📁 原始rootfs文件名: $ORIGINAL_NAME"
+          
+          # 提取name1：删除-generic-rootfs.tar.gz部分
+          NAME1=${ORIGINAL_NAME%-generic-rootfs.tar.gz}
+          NAME1=${NAME1%-rootfs.tar.gz} # 额外处理可能的-rootfs.tar.gz后缀
+          echo "✅ 提取的NAME1: $NAME1"
+          
+          # 复制文件并重命名为openwrt-armvirt-64-default-rootfs.tar.gz
+          cp "$FILE" "openwrt-armvirt-64-default-rootfs.tar.gz"
+          echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
+          echo "NAME1=$NAME1" >> $GITHUB_ENV
+          
           # 显示文件信息
-          ls -la "$ORIGINAL_NAME"
+          ls -la "openwrt-armvirt-64-default-rootfs.tar.gz"
 
       - name: Mirror rootfs into tmp directory (compat)
         run: |
@@ -158,42 +167,46 @@ jobs:
         working-directory: ./openwrt_packit
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
+          NAME1="${{ env.NAME1 }}"
+          TODAY_DATE=$(date +"%Y%m%d")
           echo "📦 Packing image using: ../$ROOTFS_FILE"
+          echo "📝 NAME1: $NAME1, 日期: $TODAY_DATE"
+          
           # 确保临时目录不存在
           sudo rm -rf tmp/* 2>/dev/null || true
           mkdir -p tmp
+          
           # 复制rootfs到openwrt_packit的tmp目录
           cp -f ../$ROOTFS_FILE tmp/
-          # 显示tmp目录内容，用于调试
-          echo "📂 tmp目录内容:" 
-          ls -la tmp/
           
           # 修改mk_s905d_n1.sh脚本，确保mkdir命令使用-p参数
           sed -i 's/mkdir /mkdir -p /g' ./mk_s905d_n1.sh
           
-          # 关键修复：为了兼容mk_s905d_n1.sh脚本，我们需要创建一个特定命名的rootfs文件
-          # 脚本可能在查找特定命名的文件，而不仅仅是依赖变量
-          ROOTFS_BASENAME=$(basename "$ROOTFS_FILE")
-          
-          # 复制一份rootfs到脚本可能期望的名称
-          # 尝试几种可能的命名格式
-          cp -f tmp/$ROOTFS_BASENAME tmp/istoreos-armsr-armv8-generic-rootfs.tar.gz
-          cp -f tmp/$ROOTFS_BASENAME tmp/rootfs.tar.gz
-          
-          # 显示创建的文件，用于调试
-          echo "✅ 已创建备用rootfs文件:" 
-          ls -la tmp/*.tar.gz
-          
-          # 显示打包脚本查找rootfs的逻辑（如果有的话）
-          grep -n "rootfs" ./mk_s905d_n1.sh || echo "未找到明确的rootfs查找逻辑"
-          
           # 运行打包脚本
           sudo ./mk_s905d_n1.sh _test
+          
+          # 显示生成的img文件
+          echo "📂 生成的img文件:" 
+          ls -la output/*.img
+          
+          # 检查是否生成了img文件
+          if [ -f output/*.img ]; then
+            # 获取生成的img文件
+            GENERATED_IMG=$(ls output/*.img | head -n1)
+            # 重命名img文件为name1+日期+.img格式
+            NEW_IMG_NAME="${NAME1}-${TODAY_DATE}.img"
+            cp "$GENERATED_IMG" "output/$NEW_IMG_NAME"
+            echo "✅ 已重命名img文件: $NEW_IMG_NAME"
+            echo "FINAL_IMG_NAME=$NEW_IMG_NAME" >> $GITHUB_ENV
+          else
+            echo "❌ 未找到生成的img文件"
+            exit 1
+          fi
 
 
       - name: Upload packed image(s)
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PACKED_ARTIFACT_NAME }}
-          path: ./openwrt_packit/output/*.img
+          name: ${{ env.FINAL_IMG_NAME || 'packed-image' }}
+          path: ./openwrt_packit/output/${{ env.FINAL_IMG_NAME || '*.img' }}
           if-no-files-found: error
