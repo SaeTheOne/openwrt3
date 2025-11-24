@@ -132,12 +132,7 @@ jobs:
           # 显示文件信息
           ls -la "./openwrt_packit/openwrt-armvirt-64-default-rootfs.tar.gz"
 
-      - name: Mirror rootfs into tmp directory (compat)
-        run: |
-          mkdir -p tmp
-          # 从openwrt_packit目录复制rootfs文件到tmp目录
-          cp -f "./openwrt_packit/${{ env.ROOTFS_FILE }}" tmp/
-          echo "✅ Rootfs文件已从openwrt_packit目录复制到tmp目录: tmp/${{ env.ROOTFS_FILE }}"
+
 
       - name: Record rootfs metadata
         run: |
