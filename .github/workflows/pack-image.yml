@@ -42,31 +42,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: unifreq/openwrt_packit
-          path: .
+          path: ./openwrt_packit
 
       - name: Write whoami file
         run: |
           if [ -n "${{ inputs.whoami_content }}" ]; then
             CONTENT="${{ inputs.whoami_content }}"
-            printf "%s\n" "$CONTENT" > whoami
+            printf "%s\n" "$CONTENT" > ./openwrt_packit/whoami
           else
             # 从调用仓库默认分支拉取 whoami（如失败则保持空）
             REPO="${GITHUB_REPOSITORY}"
             BRANCH="main"
             URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/flippy_kernel/whoami"
             echo "尝试获取 whoami: $URL"
-            curl -fsSL "$URL" -o whoami || true
+            curl -fsSL "$URL" -o ./openwrt_packit/whoami || true
           fi
 
           echo "当前 whoami 内容:"
-          cat whoami || true
+          cat ./openwrt_packit/whoami || true
 
       - name: Prepare kernel files based on whoami
         env:
           KERNEL_BASE_URL: ${{ inputs.kernel_base_url }}
         run: |
           set -e
-          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' whoami | cut -d'=' -f2)
+          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' ./openwrt_packit/whoami | cut -d'=' -f2)
           if [ -z "$KERNEL_VERSION" ]; then
             echo "未在 whoami 中找到 KERNEL_VERSION"
             exit 1
@@ -132,12 +132,12 @@ jobs:
           else
             ORIGINAL_NAME=$(basename $(find ./artifact_rootfs -type f -name "*.tar.gz" | head -n1))
           fi
-          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' whoami | cut -d'=' -f2)
+          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' ./openwrt_packit/whoami | cut -d'=' -f2)
           {
             echo "original_rootfs_name=$ORIGINAL_NAME";
             echo "kernel_version=$KERNEL_VERSION";
             echo "whoami:";
-            cat whoami;
+            cat ./openwrt_packit/whoami;
           } > rootfs-meta.txt
           BASE=${ORIGINAL_NAME%.tar.gz}
           BASE=${BASE%-generic-rootfs}
@@ -151,14 +151,25 @@ jobs:
           path: rootfs-meta.txt
 
       - name: Run packing script
-        working-directory: .
+        working-directory: ./openwrt_packit
         run: |
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
-          echo "📦 Packing image using: $ROOTFS_FILE"
+          echo "📦 Packing image using: ../$ROOTFS_FILE"
           # 确保临时目录不存在
           sudo rm -rf tmp/* 2>/dev/null || true
+          mkdir -p tmp
+          # 复制rootfs到openwrt_packit的tmp目录，保持原始名称
+          cp -f ../$ROOTFS_FILE tmp/
+          # 对于openwrt_packit脚本，可能需要创建一个软链接到预期的文件名
+          cd tmp
+          # 获取rootfs文件的基本名称（不含路径）
+          BASENAME=$(basename "$ROOTFS_FILE")
+          # 创建一个软链接，指向我们的rootfs文件，但使用脚本可能期望的格式
+          ln -sf "$BASENAME" "openwrt-armvirt-64-default-rootfs.tar.gz" || true
+          cd ..
           # 修改mk_s905d_n1.sh脚本，确保mkdir命令使用-p参数
           sed -i 's/mkdir /mkdir -p /g' ./mk_s905d_n1.sh
+          # 运行打包脚本
           sudo ./mk_s905d_n1.sh _test
 
 
@@ -166,5 +177,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PACKED_ARTIFACT_NAME }}
-          path: output/*.img
+          path: ./openwrt_packit/output/*.img
           if-no-files-found: error
