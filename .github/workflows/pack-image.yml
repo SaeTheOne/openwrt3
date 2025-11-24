@@ -492,7 +492,7 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           files: |
-            ./openwrt_packit/output/*.img
+            ./openwrt_packit/output/${{ env.FINAL_IMG_NAME }}
           body: |
             Built from ImmortalWrt
             Package SoC: s905d

@@ -168,6 +168,14 @@ jobs:
         name: ${{ steps.organize.outputs.rootfs_basename }}
         path: ${{ steps.organize.outputs.rootfs_path }}
 
+    - name: Clean up after build
+      if: always()
+      run: |
+        echo "🧹 清理构建环境..."
+        sudo rm -rf /workdir/*
+        docker system prune -af 2>/dev/null || true
+        echo "✅ 构建环境清理完成，虚拟机将自动关闭"
+
   pack:
     needs: build
     uses: ./.github/workflows/pack-image.yml
