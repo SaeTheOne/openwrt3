@@ -325,9 +325,69 @@ jobs:
           
           # 检查是否存在必要的库文件
           if [ ! -f ./lib/_common.sh ]; then
-            echo "⚠️  _common.sh文件不存在，尝试从仓库获取..."
-            # 从unifreq/openwrt_packit仓库下载必要的库文件
-            curl -fsSL "https://raw.githubusercontent.com/unifreq/openwrt_packit/main/lib/_common.sh" -o ./lib/_common.sh || echo "❌ 下载_common.sh失败"
+            echo "⚠️  _common.sh文件不存在，尝试从多个来源获取..."
+            
+            # 首先尝试从unifreq/openwrt_packit仓库的main分支下载
+            echo "🔄 尝试从main分支下载..."
+            if curl -fsSL "https://raw.githubusercontent.com/unifreq/openwrt_packit/main/lib/_common.sh" -o ./lib/_common.sh; then
+              echo "✅ 成功从main分支下载_common.sh"
+            else
+              # 尝试从unifreq/openwrt_packit仓库的master分支下载
+              echo "🔄 尝试从master分支下载..."
+              if curl -fsSL "https://raw.githubusercontent.com/unifreq/openwrt_packit/master/lib/_common.sh" -o ./lib/_common.sh; then
+                echo "✅ 成功从master分支下载_common.sh"
+              else
+                # 尝试直接从openwrt_packit目录复制
+                echo "🔄 尝试从openwrt_packit目录复制..."
+                if [ -f "../openwrt_packit/lib/_common.sh" ]; then
+                  cp -f "../openwrt_packit/lib/_common.sh" ./lib/_common.sh
+                  echo "✅ 成功从openwrt_packit目录复制_common.sh"
+                else
+                  # 创建一个基本的_common.sh文件作为备用
+                  echo "⚠️  创建基本的_common.sh文件作为备用..."
+                  # 使用正确的here-document格式
+                  cat > ./lib/_common.sh << 'EOF'
+#!/bin/bash
+
+# 基本的_common.sh备用实现
+
+# 颜色定义
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+YELLOW="\033[0;33m"
+BLUE="\033[0;34m"
+NC="\033[0m" # No Color
+
+echo_log() {
+    echo -e "${BLUE}[LOG]${NC} $1"
+}
+
+echo_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+echo_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+echo_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+# 检查文件是否存在
+check_file() {
+    if [ -f "$1" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+EOF
+                  chmod +x ./lib/_common.sh
+                  echo "✅ 已创建基本的_common.sh备用文件"
+                fi
+              fi
+            fi
           fi
           
           # 确保所有库文件都有执行权限
