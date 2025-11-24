@@ -448,8 +448,9 @@ jobs:
           
           if [ -n "$IMG_FILE" ]; then
             echo "✅ 找到img文件: $IMG_FILE"
-            # 重命名img文件为name1+日期+.img格式
-            NEW_IMG_NAME="${NAME1}-${TODAY_DATE}.img"
+            # 重命名img文件为name1+日期+内核版本+.img格式
+            KERNEL_VERSION_TAG=$(echo "${KERNEL_VERSION:-unknown}" | sed 's/[^a-zA-Z0-9._-]/_/g')
+            NEW_IMG_NAME="${NAME1}-${TODAY_DATE}-k${KERNEL_VERSION_TAG}.img"
             cp "$IMG_FILE" "output/$NEW_IMG_NAME"
             echo "✅ 已重命名img文件: $NEW_IMG_NAME"
             echo "FINAL_IMG_NAME=$NEW_IMG_NAME" >> $GITHUB_ENV
@@ -460,11 +461,22 @@ jobs:
           fi
 
 
+      - name: Compress final image
+        if: env.FINAL_IMG_NAME
+        run: |
+          echo "🗜️  压缩最终镜像文件..."
+          cd ./openwrt_packit/output
+          ZIP_NAME="${{ env.FINAL_IMG_NAME }}.zip"
+          zip -r "$ZIP_NAME" "${{ env.FINAL_IMG_NAME }}"
+          echo "FINAL_ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+          echo "✅ 压缩完成: $ZIP_NAME"
+          ls -lh *.zip
+
       - name: Upload packed image(s)
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.FINAL_IMG_NAME || 'packed-image' }}
-          path: ./openwrt_packit/output/${{ env.FINAL_IMG_NAME || '*.img' }}
+          name: ${{ env.FINAL_ZIP_NAME || env.FINAL_IMG_NAME || 'packed-image' }}
+          path: ./openwrt_packit/output/${{ env.FINAL_ZIP_NAME || env.FINAL_IMG_NAME || '*.img' }}
           if-no-files-found: error
       
       - name: Check if release should be uploaded
@@ -492,7 +504,7 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           files: |
-            ./openwrt_packit/output/${{ env.FINAL_IMG_NAME }}
+            ./openwrt_packit/output/${{ env.FINAL_ZIP_NAME || env.FINAL_IMG_NAME }}
           body: |
             Built from ImmortalWrt
             Package SoC: s905d
