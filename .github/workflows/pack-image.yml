@@ -51,9 +51,8 @@ jobs:
             printf "%s\n" "$CONTENT" > ./openwrt_packit/whoami
           else
             # 从调用仓库默认分支拉取 whoami（如失败则保持空）
-            REPO="${GITHUB_REPOSITORY}"
-            BRANCH="main"
-            URL='https://raw.githubusercontent.com/'"$REPO"'/'"$BRANCH"'/flippy_kernel/whoami'
+            # 直接在run块中使用GitHub Actions表达式，避免shell变量替换问题
+            URL="https://raw.githubusercontent.com/${{ github.repository }}/main/flippy_kernel/whoami"
             echo "尝试获取 whoami: $URL"
             curl -fsSL "$URL" -o ./openwrt_packit/whoami || true
           fi
