@@ -388,3 +388,34 @@ jobs:
           name: ${{ env.FINAL_IMG_NAME || 'packed-image' }}
           path: ./openwrt_packit/output/${{ env.FINAL_IMG_NAME || '*.img' }}
           if-no-files-found: error
+      
+      - name: Check if release should be uploaded
+        id: check_release
+        env:
+          UPLOAD_RELEASE: ${{ inputs.upload_release || 'true' }}
+        run: |
+          if [ "$UPLOAD_RELEASE" = "true" ]; then
+            echo "upload=true" >> $GITHUB_OUTPUT
+          else
+            echo "upload=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate release tag
+        if: ${{ steps.check_release.outputs.upload == 'true' }}
+        id: tag
+        run: |
+          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+
+      - name: Upload to GitHub Release
+        if: ${{ steps.check_release.outputs.upload == 'true' }}
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          files: |
+            ./openwrt_packit/output/*.img
+          body: |
+            Built from ImmortalWrt
+            Package SoC: s905d
+            Kernel: ${{ env.KERNEL_VERSION || 'Unknown' }}
