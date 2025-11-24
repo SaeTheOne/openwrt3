@@ -497,3 +497,4 @@ jobs:
             Built from ImmortalWrt
             Package SoC: s905d
             Kernel: ${{ env.KERNEL_VERSION || 'Unknown' }}
+            IP Address: 10.0.0.1
