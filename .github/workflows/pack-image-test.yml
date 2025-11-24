@@ -10,7 +10,7 @@ jobs:
       - name: Download test rootfs
         run: |
           # 使用通用的测试rootfs文件，不再使用istoreOS
-          URL="https://downloads.openwrt.org/releases/23.05.3/targets/armvirt/64/openwrt-23.05.3-armvirt-64-rootfs.tar.gz"
+          URL="https://github.com/SaeTheOne/openwrt3/releases/download/1.0/immortalwrt-24.10.4-armsr-armv8-generic-rootfs.tar.gz"
           ORIGINAL_NAME=$(basename "$URL")
           wget -O "$ORIGINAL_NAME" "$URL"
           echo "ROOTFS_ORIGINAL_NAME=$ORIGINAL_NAME" >> $GITHUB_ENV
