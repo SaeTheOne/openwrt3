@@ -162,17 +162,31 @@ jobs:
           # 确保临时目录不存在
           sudo rm -rf tmp/* 2>/dev/null || true
           mkdir -p tmp
-          # 复制rootfs到openwrt_packit的tmp目录，保持原始名称
+          # 复制rootfs到openwrt_packit的tmp目录
           cp -f ../$ROOTFS_FILE tmp/
-          # 对于openwrt_packit脚本，可能需要创建一个软链接到预期的文件名
-          cd tmp
-          # 获取rootfs文件的基本名称（不含路径）
-          BASENAME=$(basename "$ROOTFS_FILE")
-          # 创建一个软链接，指向我们的rootfs文件，但使用脚本可能期望的格式
-          ln -sf "$BASENAME" "openwrt-armvirt-64-default-rootfs.tar.gz" || true
-          cd ..
+          # 显示tmp目录内容，用于调试
+          echo "📂 tmp目录内容:" 
+          ls -la tmp/
+          
           # 修改mk_s905d_n1.sh脚本，确保mkdir命令使用-p参数
           sed -i 's/mkdir /mkdir -p /g' ./mk_s905d_n1.sh
+          
+          # 关键修复：为了兼容mk_s905d_n1.sh脚本，我们需要创建一个特定命名的rootfs文件
+          # 脚本可能在查找特定命名的文件，而不仅仅是依赖变量
+          ROOTFS_BASENAME=$(basename "$ROOTFS_FILE")
+          
+          # 复制一份rootfs到脚本可能期望的名称
+          # 尝试几种可能的命名格式
+          cp -f tmp/$ROOTFS_BASENAME tmp/istoreos-armsr-armv8-generic-rootfs.tar.gz
+          cp -f tmp/$ROOTFS_BASENAME tmp/rootfs.tar.gz
+          
+          # 显示创建的文件，用于调试
+          echo "✅ 已创建备用rootfs文件:" 
+          ls -la tmp/*.tar.gz
+          
+          # 显示打包脚本查找rootfs的逻辑（如果有的话）
+          grep -n "rootfs" ./mk_s905d_n1.sh || echo "未找到明确的rootfs查找逻辑"
+          
           # 运行打包脚本
           sudo ./mk_s905d_n1.sh _test
 
