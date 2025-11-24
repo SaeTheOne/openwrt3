@@ -53,7 +53,7 @@ jobs:
             # 从调用仓库默认分支拉取 whoami（如失败则保持空）
             REPO="${GITHUB_REPOSITORY}"
             BRANCH="main"
-            URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/flippy_kernel/whoami"
+            URL='https://raw.githubusercontent.com/${REPO}/${BRANCH}/flippy_kernel/whoami'
             echo "尝试获取 whoami: $URL"
             curl -fsSL "$URL" -o ./openwrt_packit/whoami || true
           fi
