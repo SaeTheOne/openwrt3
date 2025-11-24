@@ -225,18 +225,24 @@ jobs:
           # 给脚本添加执行权限
           chmod +x ./mk_s905d_n1.sh
           
-          # 关键修复：在脚本开头直接设置OPWRT_ROOTFS_GZ变量，绕过函数调用
-          ROOTFS_PATH="${PWD}/tmp/rootfs.tar.gz"
-          echo "🔧 在mk_s905d_n1.sh脚本开头设置OPWRT_ROOTFS_GZ=$ROOTFS_PATH"
-          sed -i '1i OPWRT_ROOTFS_GZ="'"$ROOTFS_PATH"'"' ./mk_s905d_n1.sh
+          # 关键修复：直接使用实际的rootfs文件路径
+          ACTUAL_ROOTFS_PATH="${PWD}/../openwrt-armvirt-64-default-rootfs.tar.gz"
+          echo "🔧 在mk_s905d_n1.sh脚本开头设置OPWRT_ROOTFS_GZ=$ACTUAL_ROOTFS_PATH"
+          sed -i '1i OPWRT_ROOTFS_GZ="'"$ACTUAL_ROOTFS_PATH"'"' ./mk_s905d_n1.sh
           
           # 同时保留环境变量设置，双重保险
-          export OPWRT_ROOTFS_GZ="$ROOTFS_PATH"
+          export OPWRT_ROOTFS_GZ="$ACTUAL_ROOTFS_PATH"
           echo "🔧 设置环境变量OPWRT_ROOTFS_GZ=$OPWRT_ROOTFS_GZ"
           
-          # 显示修改后的脚本前几行，确认设置成功
+          # 显示修改后的脚本开头几行，确认设置成功
           echo "📝 修改后的脚本开头几行:"
           head -n 10 ./mk_s905d_n1.sh
+          
+          # 精确调试：检查执行时的环境变量值
+          echo "🔍 执行前环境变量检查:"
+          env | grep -E 'OPWRT|ROOTFS'
+          echo "🔍 实际rootfs文件路径检查:"
+          ls -la "$ACTUAL_ROOTFS_PATH"
           
           # 运行打包脚本，添加调试输出
           echo "🚀 运行打包脚本..."
