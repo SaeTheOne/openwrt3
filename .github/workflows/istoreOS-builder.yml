@@ -16,7 +16,7 @@ env:
   REPO_URL: https://github.com/istoreOS/istoreOS
   REPO_BRANCH: istoreOS-24.10
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: .config
+  CONFIG_FILE: istoreOS.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: false
