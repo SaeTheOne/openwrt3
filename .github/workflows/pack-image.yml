@@ -1,4 +1,4 @@
-name: 📦 Pack OpenWrt/ImmortalWrt Image
+name: 📦 Pack OpenWrt/istoreOS Image
 
 on:
   workflow_call:
@@ -115,15 +115,19 @@ jobs:
             echo "❌ 未找到 rootfs artifact (*.tar.gz)"
             exit 1
           fi
-          # 保留原始文件名，不进行重命名
+          # 完全保留原始文件名，不进行任何重命名操作
           ORIGINAL_NAME=$(basename "$FILE")
+          echo "📁 使用原始rootfs文件: $ORIGINAL_NAME"
           cp "$FILE" "$ORIGINAL_NAME"
           echo "ROOTFS_FILE=$ORIGINAL_NAME" >> $GITHUB_ENV
+          # 显示文件信息
+          ls -la "$ORIGINAL_NAME"
 
       - name: Mirror rootfs into tmp directory (compat)
         run: |
           mkdir -p tmp
           cp -f "${{ env.ROOTFS_FILE }}" tmp/
+          echo "✅ Rootfs文件已复制到tmp目录: tmp/${{ env.ROOTFS_FILE }}"
 
       - name: Record rootfs metadata
         run: |

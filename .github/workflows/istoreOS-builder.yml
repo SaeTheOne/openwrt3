@@ -1,6 +1,6 @@
 # .github/workflows/istoreOS-builder.yml
 #
-# https://github.com/P3TERX/Actions-immortalwrt
+# https://github.com/P3TERX/Actions-istoreOS
 # Modified to call external pack-image workflow
 #
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
@@ -13,8 +13,8 @@ on:
   repository_dispatch:
 
 env:
-  REPO_URL: https://github.com/istoreos/istoreos
-  REPO_BRANCH: istoreos-24.10
+  REPO_URL: https://github.com/istoreOS/istoreOS
+  REPO_BRANCH: istoreOS-24.10
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -42,7 +42,7 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
-        #sudo -E bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+        # 初始化构建环境
         sudo -E apt-get -qq install -y \
           libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
           libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz genisoimage msmtp \
@@ -60,28 +60,28 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH immortalwrt
-        ln -sf /workdir/immortalwrt $GITHUB_WORKSPACE/immortalwrt
+        git clone $REPO_URL -b $REPO_BRANCH istoreOS
+        ln -sf /workdir/istoreOS $GITHUB_WORKSPACE/istoreOS
 
     - name: Load custom feeds
       run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF immortalwrt/feeds.conf.default
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF istoreOS/feeds.conf.default
         chmod +x $DIY_P1_SH
-        cd immortalwrt
+        cd istoreOS
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update feeds
-      run: cd immortalwrt && ./scripts/feeds update -a
+      run: cd istoreOS && ./scripts/feeds update -a
 
     - name: Install feeds
-      run: cd immortalwrt && ./scripts/feeds install -a
+      run: cd istoreOS && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
-        [ -e files ] && mv files immortalwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE immortalwrt/.config
+        [ -e files ] && mv files istoreOS/files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE istoreOS/.config
         chmod +x $DIY_P2_SH
-        cd immortalwrt
+        cd istoreOS
         $GITHUB_WORKSPACE/$DIY_P2_SH
         if [ -f "$GITHUB_WORKSPACE/additional_configs.txt" ]; then
           echo "✅ 合并 additional_configs.txt 到 .config"
@@ -91,7 +91,7 @@ jobs:
     - name: Download package
       id: package
       run: |
-        cd immortalwrt
+        cd istoreOS
         make defconfig
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
@@ -100,7 +100,7 @@ jobs:
     - name: Compile firmware
       id: compile
       run: |
-        cd immortalwrt
+        cd istoreOS
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
@@ -116,14 +116,22 @@ jobs:
       uses: actions/upload-artifact@v4
       if: ${{ steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' }}
       with:
-        name: immortalwrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: immortalwrt/bin
+        name: istoreOS_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: istoreOS/bin
 
     - name: Organize firmware files
       id: organize
       if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
       run: |
-        cd immortalwrt/bin/targets/*/*
+        cd istoreOS/bin/targets/*/*
+        # 查看所有生成的tar.gz文件
+        echo "📁 查看生成的tar.gz文件："
+        find "$PWD" -name "*.tar.gz" -type f | sort
+        # 统计tar.gz文件数量
+        COUNT=$(find "$PWD" -name "*.tar.gz" -type f | wc -l)
+        echo "✅ 共找到 $COUNT 个tar.gz文件"
+        
+        # 获取rootfs文件（不进行重命名，使用原始文件名）
         ROOTFS=$(find "$PWD" -name "*-generic-rootfs.tar.gz" | head -n1)
         if [ -z "$ROOTFS" ]; then
           echo "❌ No *-generic-rootfs.tar.gz found!"
@@ -286,6 +294,6 @@ jobs:
             */*-packed-image/*.img
             ./artifact_rootfs/*.tar.gz
           body: |
-            Built from iStoreOS `${{ env.REPO_BRANCH }}`
+            Built from istoreOS `${{ env.REPO_BRANCH }}`
             Package SoC: s905d
             Kernel: 6.12.46
