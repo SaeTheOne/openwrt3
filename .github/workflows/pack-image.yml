@@ -172,12 +172,31 @@ jobs:
           echo "📦 Packing image using: ../$ROOTFS_FILE"
           echo "📝 NAME1: $NAME1, 日期: $TODAY_DATE"
           
+          # 关键调试：显示详细的目录结构信息
+          echo "📁 当前工作目录: $(pwd)"
+          echo "📁 上级目录: $(cd .. && pwd)"
+          echo "📁 根目录: /"
+          echo "📁 环境变量GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+          
+          # 显示目录层次结构
+          echo "📂 目录层次结构:"
+          find .. -type d -maxdepth 2 | sort
+          
           # 确保临时目录不存在
           sudo rm -rf tmp/* 2>/dev/null || true
           mkdir -p tmp
           
+          # 检查rootfs文件是否存在并显示详细信息
+          echo "🔍 检查rootfs文件: ../$ROOTFS_FILE"
+          if [ -f "../$ROOTFS_FILE" ]; then
+            echo "✅ 文件存在，大小: $(du -h ../$ROOTFS_FILE | cut -f1)"
+          else
+            echo "❌ 文件不存在！正在搜索所有可用的tar.gz文件..."
+            find .. -name "*.tar.gz" -type f | xargs ls -la
+          fi
+          
           # 复制rootfs到openwrt_packit的tmp目录
-          cp -f ../$ROOTFS_FILE tmp/
+          cp -f ../$ROOTFS_FILE tmp/ || echo "❌ 复制文件失败！"
           
           # 关键修复：创建脚本期望的多个rootfs文件名副本
           # 从错误信息看，脚本可能在寻找特定命名的rootfs文件
