@@ -269,15 +269,56 @@ jobs:
           export OPWRT_ROOTFS_GZ="$ACTUAL_ROOTFS_PATH"
           echo "🔧 设置环境变量OPWRT_ROOTFS_GZ=$OPWRT_ROOTFS_GZ"
           
+          # 在脚本内部也添加OPWRT_ROOTFS_GZ变量检查和设置
+          # 找到get_openwrt_rootfs_archive函数并在其中添加直接返回变量值的逻辑
+          if grep -q "get_openwrt_rootfs_archive" ./mk_s905d_n1.sh; then
+            echo "🔧 修改get_openwrt_rootfs_archive函数，优先使用OPWRT_ROOTFS_GZ环境变量"
+            # 在函数开头添加检查OPWRT_ROOTFS_GZ变量的逻辑
+            sed -i '/get_openwrt_rootfs_archive()/a \    if [ -n "$OPWRT_ROOTFS_GZ" ] && [ -f "$OPWRT_ROOTFS_GZ" ]; then\n        echo "$OPWRT_ROOTFS_GZ"\n        return 0\n    fi' ./mk_s905d_n1.sh
+          fi
+          
+          # 直接修改脚本，在任何地方查找rootfs文件前都先检查OPWRT_ROOTFS_GZ
+          echo "🔧 在脚本中添加全局rootfs路径检查"
+          # 在脚本开头添加多个rootfs路径的检查和设置
+          cat << 'EOF' > ./rootfs_finder.sh
+          #!/bin/bash
+          
+          # 查找rootfs文件的所有可能位置
+          check_rootfs_location() {
+              local locations=("$1" "../openwrt-armvirt-64-default-rootfs.tar.gz" "./openwrt_rootfs.tar.gz" "./rootfs.tar.gz" "tmp/rootfs.tar.gz" "tmp/openwrt_rootfs.tar.gz")
+              
+              for loc in "${locations[@]}"; do
+                  if [ -f "$loc" ]; then
+                      echo "✅ 找到rootfs文件在: $loc"
+                      return 0
+                  fi
+              done
+              
+              return 1
+          }
+          
+          # 运行检查
+          if ! check_rootfs_location "$OPWRT_ROOTFS_GZ"; then
+              echo "❌ 未找到rootfs文件! 尝试复制当前位置的文件..."
+              # 尝试从上级目录复制
+              cp -f ../openwrt-armvirt-64-default-rootfs.tar.gz ./openwrt_rootfs.tar.gz 2>/dev/null || echo "复制失败"
+              cp -f ../openwrt-armvirt-64-default-rootfs.tar.gz ./rootfs.tar.gz 2>/dev/null || echo "复制失败"
+          fi
+          EOF
+          
+          chmod +x ./rootfs_finder.sh
+          
           # 显示修改后的脚本开头几行，确认设置成功
           echo "📝 修改后的脚本开头几行:"
-          head -n 10 ./mk_s905d_n1.sh
+          head -n 15 ./mk_s905d_n1.sh
           
           # 精确调试：检查执行时的环境变量值
           echo "🔍 执行前环境变量检查:"
           env | grep -E 'OPWRT|ROOTFS|SHELL'
           echo "🔍 实际rootfs文件路径检查:"
-          ls -la "$ACTUAL_ROOTFS_PATH"
+          ls -la "$ACTUAL_ROOTFS_PATH" || echo "文件不存在"
+          echo "🔍 上级目录文件检查:"
+          ls -la ../ | grep rootfs
           
           # 检查库文件是否存在
           echo "📁 检查库文件:"
@@ -291,8 +332,12 @@ jobs:
           # 运行打包脚本，添加调试输出
           echo "🚀 运行打包脚本..."
           SCRIPT_EXIT_CODE=0
-          # 使用bash显式执行脚本
-          sudo -E bash ./mk_s905d_n1.sh _test 2>&1 | tee packing.log || SCRIPT_EXIT_CODE=$?
+          # 运行rootfs查找脚本
+          ./rootfs_finder.sh
+          
+          # 额外设置环境变量并传递给sudo
+          echo "🔧 使用sudo -E确保环境变量正确传递"
+          sudo -E OPWRT_ROOTFS_GZ="$ACTUAL_ROOTFS_PATH" bash ./mk_s905d_n1.sh _test 2>&1 | tee packing.log || SCRIPT_EXIT_CODE=$?
           
           echo "📊 打包脚本执行状态码: $SCRIPT_EXIT_CODE"
           
