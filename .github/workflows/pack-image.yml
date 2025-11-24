@@ -124,19 +124,20 @@ jobs:
           NAME1=${NAME1%-rootfs.tar.gz} # 额外处理可能的-rootfs.tar.gz后缀
           echo "✅ 提取的NAME1: $NAME1"
           
-          # 复制文件并重命名为openwrt-armvirt-64-default-rootfs.tar.gz
-          cp "$FILE" "openwrt-armvirt-64-default-rootfs.tar.gz"
+          # 关键修改：复制文件到openwrt_packit目录下并重命名为openwrt-armvirt-64-default-rootfs.tar.gz
+          cp "$FILE" "./openwrt_packit/openwrt-armvirt-64-default-rootfs.tar.gz"
           echo "ROOTFS_FILE=openwrt-armvirt-64-default-rootfs.tar.gz" >> $GITHUB_ENV
           echo "NAME1=$NAME1" >> $GITHUB_ENV
           
           # 显示文件信息
-          ls -la "openwrt-armvirt-64-default-rootfs.tar.gz"
+          ls -la "./openwrt_packit/openwrt-armvirt-64-default-rootfs.tar.gz"
 
       - name: Mirror rootfs into tmp directory (compat)
         run: |
           mkdir -p tmp
-          cp -f "${{ env.ROOTFS_FILE }}" tmp/
-          echo "✅ Rootfs文件已复制到tmp目录: tmp/${{ env.ROOTFS_FILE }}"
+          # 从openwrt_packit目录复制rootfs文件到tmp目录
+          cp -f "./openwrt_packit/${{ env.ROOTFS_FILE }}" tmp/
+          echo "✅ Rootfs文件已从openwrt_packit目录复制到tmp目录: tmp/${{ env.ROOTFS_FILE }}"
 
       - name: Record rootfs metadata
         run: |
@@ -186,7 +187,7 @@ jobs:
           ROOTFS_FILE="${{ env.ROOTFS_FILE }}"
           NAME1="${{ env.NAME1 }}"
           TODAY_DATE=$(date +"%Y%m%d")
-          echo "📦 Packing image using: ../$ROOTFS_FILE"
+          echo "📦 Packing image using: $ROOTFS_FILE"  # 直接使用当前目录下的文件
           echo "📝 NAME1: $NAME1, 日期: $TODAY_DATE"
           
           # 关键调试：显示详细的目录结构信息
