@@ -1,4 +1,4 @@
-name: 📦 Pack OpenWrt/istoreOS Image
+name: 📦 Pack OpenWrt Image
 
 on:
   workflow_call:
@@ -187,7 +187,6 @@ jobs:
           cp -f ../$ROOTFS_FILE tmp/rootfs.tar.gz      # 最基础的名称
           cp -f ../$ROOTFS_FILE tmp/openwrt_rootfs.tar.gz  # 可能的默认名称
           cp -f ../$ROOTFS_FILE tmp/openwrt-armvirt-64-rootfs.tar.gz  # 架构相关名称
-          cp -f ../$ROOTFS_FILE tmp/istoreos-armsr-armv8-generic-rootfs.tar.gz  # 原始名称格式
           
           # 显示tmp目录内容，用于调试
           echo "📂 tmp目录内容:" 
