@@ -66,27 +66,105 @@ jobs:
           KERNEL_BASE_URL: ${{ inputs.kernel_base_url }}
         run: |
           set -e
-          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' ./openwrt_packit/whoami | cut -d'=' -f2)
+          # 从whoami文件读取KERNEL_VERSION
+          KERNEL_VERSION=$(grep '^KERNEL_VERSION=' ./openwrt_packit/whoami | cut -d'=' -f2 || echo "")
+          FALLBACK_VERSION="6.12.58-flippy-94+"
+          
+          # 检查whoami中是否有KERNEL_VERSION
           if [ -z "$KERNEL_VERSION" ]; then
-            echo "未在 whoami 中找到 KERNEL_VERSION"
-            exit 1
+            echo "未在 whoami 中找到 KERNEL_VERSION，将使用默认值: $FALLBACK_VERSION"
+            KERNEL_VERSION="$FALLBACK_VERSION"
+            # 更新whoami文件
+            echo "KERNEL_VERSION=$KERNEL_VERSION" > ./openwrt_packit/whoami
           fi
-          BASE_URL=${KERNEL_BASE_URL:-https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel}
-          echo "使用内核版本: $KERNEL_VERSION"
-          echo "内核来源: $BASE_URL"
-          sudo mkdir -p /opt/kernel
-          cd /tmp
-          for f in \
-            "boot-$KERNEL_VERSION.tar.gz" \
-            "dtb-allwinner-$KERNEL_VERSION.tar.gz" \
-            "dtb-amlogic-$KERNEL_VERSION.tar.gz" \
-            "dtb-rockchip-$KERNEL_VERSION.tar.gz" \
-            "header-$KERNEL_VERSION.tar.gz" \
-            "modules-$KERNEL_VERSION.tar.gz"; do
-            echo "下载: $BASE_URL/$f"
-            curl -fsSL "$BASE_URL/$f" -o "$f"
-            sudo cp "$f" /opt/kernel/
-          done
+          
+          echo "当前whoami中的KERNEL_VERSION: $KERNEL_VERSION"
+          
+          # 检查flippy_kernel目录中的文件是否匹配当前KERNEL_VERSION
+          MISMATCH_FOUND=false
+          if [ -d "../flippy_kernel" ]; then
+            echo "检查flippy_kernel目录中的文件版本..."
+            # 查看flippy_kernel目录中是否有与当前KERNEL_VERSION匹配的文件
+            for f in "boot-$KERNEL_VERSION.tar.gz" "modules-$KERNEL_VERSION.tar.gz"; do
+              if [ ! -f "../flippy_kernel/$f" ]; then
+                echo "❌ 未找到匹配的文件: ../flippy_kernel/$f"
+                MISMATCH_FOUND=true
+                break
+              fi
+            done
+          else
+            echo "⚠️ flippy_kernel目录不存在"
+            MISMATCH_FOUND=true
+          fi
+          
+          # 如果版本不匹配，尝试从GitHub Releases下载
+          if [ "$MISMATCH_FOUND" = true ]; then
+            echo "⚠️ 版本不匹配或文件不存在，尝试从GitHub Releases下载..."
+            RELEASE_BASE_URL="https://github.com/SaeTheOne/openwrt3/releases/download/kernel_${KERNEL_VERSION//+/\%2B}"
+            
+            # 创建必要的目录
+            sudo mkdir -p /opt/kernel
+            
+            # 尝试下载所有必要的内核文件
+            ALL_DOWNLOADED=true
+            for f in \
+              "boot-$KERNEL_VERSION.tar.gz" \
+              "dtb-allwinner-$KERNEL_VERSION.tar.gz" \
+              "dtb-amlogic-$KERNEL_VERSION.tar.gz" \
+              "dtb-rockchip-$KERNEL_VERSION.tar.gz" \
+              "header-$KERNEL_VERSION.tar.gz" \
+              "modules-$KERNEL_VERSION.tar.gz"; do
+              
+              echo "尝试下载: $RELEASE_BASE_URL/$f"
+              if curl -fsSL "$RELEASE_BASE_URL/$f" -o "/tmp/$f"; then
+                echo "✅ 成功下载: $f"
+                sudo cp "/tmp/$f" /opt/kernel/
+              else
+                echo "❌ 下载失败: $f"
+                ALL_DOWNLOADED=false
+                break
+              fi
+            done
+            
+            # 如果下载失败，回退到默认版本
+            if [ "$ALL_DOWNLOADED" = false ] && [ "$KERNEL_VERSION" != "$FALLBACK_VERSION" ]; then
+              echo "⚠️ 下载失败，回退到默认版本: $FALLBACK_VERSION"
+              KERNEL_VERSION="$FALLBACK_VERSION"
+              # 更新whoami文件
+              echo "KERNEL_VERSION=$KERNEL_VERSION" > ./openwrt_packit/whoami
+              
+              # 尝试使用基础URL下载默认版本
+              BASE_URL=${KERNEL_BASE_URL:-https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel}
+              echo "使用默认内核版本: $KERNEL_VERSION"
+              echo "内核来源: $BASE_URL"
+              
+              for f in \
+                "boot-$KERNEL_VERSION.tar.gz" \
+                "dtb-allwinner-$KERNEL_VERSION.tar.gz" \
+                "dtb-amlogic-$KERNEL_VERSION.tar.gz" \
+                "dtb-rockchip-$KERNEL_VERSION.tar.gz" \
+                "header-$KERNEL_VERSION.tar.gz" \
+                "modules-$KERNEL_VERSION.tar.gz"; do
+                echo "下载: $BASE_URL/$f"
+                curl -fsSL "$BASE_URL/$f" -o "/tmp/$f"
+                sudo cp "/tmp/$f" /opt/kernel/
+              done
+            fi
+          else
+            # 版本匹配，直接使用本地文件
+            echo "✅ 本地版本匹配，使用flippy_kernel目录中的文件"
+            sudo mkdir -p /opt/kernel
+            for f in "boot-$KERNEL_VERSION.tar.gz" "dtb-allwinner-$KERNEL_VERSION.tar.gz" "dtb-amlogic-$KERNEL_VERSION.tar.gz" "dtb-rockchip-$KERNEL_VERSION.tar.gz" "header-$KERNEL_VERSION.tar.gz" "modules-$KERNEL_VERSION.tar.gz"; do
+              if [ -f "../flippy_kernel/$f" ]; then
+                echo "复制: ../flippy_kernel/$f -> /opt/kernel/"
+                sudo cp "../flippy_kernel/$f" /opt/kernel/
+              fi
+            done
+          fi
+          
+          # 保存最终使用的内核版本
+          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
+          echo "✅ 最终使用的内核版本: $KERNEL_VERSION"
 
       - name: Download rootfs from URL
         if: ${{ inputs.rootfs_url != '' }}
