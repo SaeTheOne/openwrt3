@@ -65,7 +65,7 @@ jobs:
         [ -e files ] && mv files openwrt/files
         cd openwrt
         
-        # 配置文件加载优先级：自定义文件 > 自定义URL > 清华大学镜像下载
+        # 配置文件加载优先级：自定义文件 > 自定义URL > OpenWrt官方下载
         if [ -n "$CONFIG_FILE" ] && [ -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ]; then
             cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
             echo "✅ 使用自定义配置文件: $CONFIG_FILE"
@@ -73,26 +73,26 @@ jobs:
             curl -fsSL "$CONFIG_URL" > .config
             echo "✅ 使用自定义URL配置文件: $CONFIG_URL"
         else
-            echo "❌ 未找到自定义配置文件，从清华大学镜像下载"
-            # 从清华大学镜像下载配置文件
+            echo "❌ 未找到自定义配置文件，从OpenWrt官方地址下载(非清华大学镜像)"
+            # 从OpenWrt官方下载配置文件
             if [[ "$REPO_BRANCH" == main || "$REPO_BRANCH" == master ]]; then
                 # 对于开发分支，使用snapshots目录
-                CONFIG_URL="https://mirrors.tuna.tsinghua.edu.cn/openwrt/snapshots/targets/armsr/armv8/config.buildinfo"
+                CONFIG_URL="https://downloads.openwrt.org/snapshots/targets/armsr/armv8/config.buildinfo"
                 echo "🔗 从开发分支下载配置: $CONFIG_URL"
             elif [[ "$REPO_BRANCH" == v* ]]; then
                 # 对于发布版本，提取版本号
                 VERSION=${REPO_BRANCH#v}
-                CONFIG_URL="https://mirrors.tuna.tsinghua.edu.cn/openwrt/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
+                CONFIG_URL="https://downloads.openwrt.org/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
                 echo "🔗 从发布版本下载配置: $CONFIG_URL"
             else
                 # 默认尝试最新的稳定版本
-                CONFIG_URL="https://mirrors.tuna.tsinghua.edu.cn/openwrt/releases/23.05.6/targets/armsr/armv8/config.buildinfo"
+                CONFIG_URL="https://downloads.openwrt.org/releases/23.05.6/targets/armsr/armv8/config.buildinfo"
                 echo "🔗 从最新稳定版本下载配置: $CONFIG_URL"
             fi
             
             # 下载配置文件
             if curl -fsSL -o .config "$CONFIG_URL"; then
-                echo "✅ 成功从清华大学镜像下载配置文件"
+                echo "✅ 成功从OpenWrt官方下载配置文件"
             else
                 echo "❌ 下载配置文件失败，尝试使用默认配置"
                 make defconfig > /dev/null 2>&1 || echo "❌ 默认配置生成失败"
@@ -106,10 +106,16 @@ jobs:
         fi
         
         # 移除视频相关feeds以避免编译冲突
-        # rm -rf feeds/video
+        rm -rf feeds/video
         
-        chmod +x $DIY_P2_SH
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        # 检查diy-part2.sh文件是否存在，存在才执行
+        if [ -f "$GITHUB_WORKSPACE/$DIY_P2_SH" ]; then
+            chmod +x "$GITHUB_WORKSPACE/$DIY_P2_SH"
+            "$GITHUB_WORKSPACE/$DIY_P2_SH"
+            echo "✅ 执行自定义脚本完成"
+        else
+            echo "⚠️  自定义脚本 $DIY_P2_SH 不存在，跳过执行"
+        fi
         make defconfig
 
     - name: Download package
