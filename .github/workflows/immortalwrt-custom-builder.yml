@@ -1,18 +1,22 @@
-name: OpenWrt Builder
+# .github/workflows/immortalwrt-custom-builder.yml
+# 自定义ImmortalWrt构建工作流
+# 使用指定的依赖包列表
+
+name: Custom immortalwrt Builder
 
 on:
-  repository_dispatch:
   workflow_dispatch:
+  repository_dispatch:
 env:
-  REPO_URL: https://github.com/openwrt/openwrt
-  REPO_BRANCH: main
+  REPO_URL: https://github.com/immortalwrt/immortalwrt/
+  REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: ""
+  CONFIG_FILE: immortalwrt.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: false
+  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
@@ -33,7 +37,8 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        # 安装用户指定的依赖包
+        sudo -E apt-get -qq install binutils bzip2 diffutils findutils flex gawk gcc-11 g++-11 getopt grep libc-dev libz-dev make perl python3 rsync subversion unzip which
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -44,78 +49,69 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        git clone $REPO_URL -b $REPO_BRANCH immortalwrt
+        ln -sf /workdir/immortalwrt $GITHUB_WORKSPACE/immortalwrt
 
     - name: Load custom feeds
       run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF immortalwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
-        cd openwrt
+        cd immortalwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
+      run: cd immortalwrt && ./scripts/feeds update -a
 
     - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+      run: cd immortalwrt && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
-        [ -e files ] && mv files openwrt/files
-        cd openwrt
+        [ -e files ] && mv files immortalwrt/files
         
-        # 配置文件加载优先级：自定义文件 > 自定义URL > 清华大学镜像下载
-        if [ -n "$CONFIG_FILE" ] && [ -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ]; then
-            cp "$GITHUB_WORKSPACE/$CONFIG_FILE" .config
-            echo "✅ 使用自定义配置文件: $CONFIG_FILE"
-        elif [ -n "$CONFIG_URL" ]; then
-            curl -fsSL "$CONFIG_URL" > .config
-            echo "✅ 使用自定义URL配置文件: $CONFIG_URL"
+        # 检查CONFIG_FILE是否存在
+        if [ -e "$CONFIG_FILE" ]; then
+          echo "✅ 找到自定义配置文件 $CONFIG_FILE"
+          mv "$CONFIG_FILE" immortalwrt/.config
         else
-            echo "❌ 未找到自定义配置文件，从清华大学镜像下载"
-            # 从清华大学镜像下载配置文件
-            if [[ "$REPO_BRANCH" == main || "$REPO_BRANCH" == master ]]; then
-                # 对于开发分支，使用snapshots目录
-                CONFIG_URL="https://mirrors.tuna.tsinghua.edu.cn/openwrt/snapshots/targets/armsr/armv8/config.buildinfo"
-                echo "🔗 从开发分支下载配置: $CONFIG_URL"
-            elif [[ "$REPO_BRANCH" == v* ]]; then
-                # 对于发布版本，提取版本号
-                VERSION=${REPO_BRANCH#v}
-                CONFIG_URL="https://mirrors.tuna.tsinghua.edu.cn/openwrt/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
-                echo "🔗 从发布版本下载配置: $CONFIG_URL"
-            else
-                # 默认尝试最新的稳定版本
-                CONFIG_URL="https://mirrors.tuna.tsinghua.edu.cn/openwrt/releases/23.05.6/targets/armsr/armv8/config.buildinfo"
-                echo "🔗 从最新稳定版本下载配置: $CONFIG_URL"
-            fi
-            
-            # 下载配置文件
-            if curl -fsSL -o .config "$CONFIG_URL"; then
-                echo "✅ 成功从清华大学镜像下载配置文件"
-            else
-                echo "❌ 下载配置文件失败，尝试使用默认配置"
-                make defconfig > /dev/null 2>&1 || echo "❌ 默认配置生成失败"
-            fi
+          echo "❌ 未找到自定义配置文件 $CONFIG_FILE，将根据REPO_BRANCH下载配置文件"
+          cd immortalwrt
+          
+          # 检查REPO_BRANCH是否以v开头
+          if [[ "$REPO_BRANCH" == v* ]]; then
+            # 提取版本号（去掉v前缀）
+            VERSION=${REPO_BRANCH#v}
+            CONFIG_URL="https://mirror.nju.edu.cn/immortalwrt/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
+            echo "🔗 正在从版本发布地址下载: $CONFIG_URL"
+          else
+            CONFIG_URL="https://mirror.nju.edu.cn/immortalwrt/snapshots/targets/armsr/armv8/config.buildinfo"
+            echo "🔗 正在从快照地址下载: $CONFIG_URL"
+          fi
+          
+          # 下载config.buildinfo
+          wget -O .config "$CONFIG_URL" || {
+            echo "❌ 下载配置文件失败！"
+            exit 1
+          }
+          echo "✅ 成功下载配置文件"
+          
+          # 返回上级目录以执行DIY脚本
+          cd ..
         fi
-        
-        # 添加额外配置
-        if [ -f "$GITHUB_WORKSPACE/additional_configs.txt" ]; then
-            echo "✅ 合并 additional_configs.txt 到 .config"
-            cat "$GITHUB_WORKSPACE/additional_configs.txt" >> .config
-        fi
-        
-        # 移除视频相关feeds以避免编译冲突
-        # rm -rf feeds/video
         
         chmod +x $DIY_P2_SH
+        cd immortalwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
+        if [ -f "$GITHUB_WORKSPACE/additional_configs.txt" ]; then
+          echo "✅ 合并 additional_configs.txt 到 .config"
+          cat "$GITHUB_WORKSPACE/additional_configs.txt" >> .config
+        fi
         make defconfig
 
     - name: Download package
       id: package
       run: |
-        cd openwrt
+        cd immortalwrt
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
@@ -123,7 +119,7 @@ jobs:
     - name: Compile firmware
       id: compile
       run: |
-        cd openwrt
+        cd immortalwrt
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
@@ -139,14 +135,14 @@ jobs:
       uses: actions/upload-artifact@v4
       if: ${{ steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' }}
       with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
+        name: immortalwrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: immortalwrt/bin
 
     - name: Organize firmware files
       id: organize
       if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
       run: |
-        cd openwrt/bin/targets/*/*
+        cd immortalwrt/bin/targets/*/*
         ROOTFS=$(find "$PWD" -maxdepth 1 -name "*-generic-rootfs.tar.gz" | head -n1)
         if [ -z "$ROOTFS" ]; then
           ROOTFS=$(find "$PWD" -maxdepth 1 -name "*-rootfs.tar.gz" | head -n1)

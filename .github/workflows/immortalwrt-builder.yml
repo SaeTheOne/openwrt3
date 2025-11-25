@@ -110,12 +110,12 @@ jobs:
           echo "✅ 合并 additional_configs.txt 到 .config"
           cat "$GITHUB_WORKSPACE/additional_configs.txt" >> .config
         fi
+        make defconfig
 
     - name: Download package
       id: package
       run: |
         cd immortalwrt
-        make defconfig
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
