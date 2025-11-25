@@ -15,7 +15,7 @@ env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt/
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: 1immortalwrt.config
+  CONFIG_FILE: immortalwrt.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: false
@@ -97,7 +97,9 @@ jobs:
             echo "❌ 下载配置文件失败！"
             exit 1
           }
-          echo "✅ 成功下载配置文件"
+          # 同时保存为immortalwrt.config作为备份
+          cp .config ../immortalwrt.config
+          echo "✅ 成功下载配置文件并保存为.immortalwrt/.config和immortalwrt.config"
           
           # 返回上级目录以执行DIY脚本
           cd ..
