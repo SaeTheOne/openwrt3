@@ -6,7 +6,7 @@
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
 # Licensed under MIT License.
 
-name: immortalwrt Builder
+name: immortalwrt Builder master
 
 on:
   workflow_dispatch:
