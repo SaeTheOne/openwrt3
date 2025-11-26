@@ -63,20 +63,30 @@ jobs:
       - name: Load config
         run: |
           cd openwrt
-          # 🔧 优化：支持从 configs 目录加载自定义配置，同时检查OpenWrt.config
+          # 🔧 优化：参考immortalwrt实现，优先使用根目录配置文件
           if [ -f ../OpenWrt.config ]; then
-            echo "使用本地 OpenWrt.config 文件"
+            echo "✅ 找到本地 OpenWrt.config 文件"
             cp ../OpenWrt.config .config
           elif [ -f ../configs/$CONFIG_FILE.config ]; then
-            echo "使用 configs/$CONFIG_FILE.config 文件"
+            echo "✅ 找到 configs/$CONFIG_FILE.config 文件"
             cp ../configs/$CONFIG_FILE.config .config
           else
-            echo "未找到本地配置文件，尝试从GitHub下载"
-            # 尝试从GitHub下载OpenWrt配置文件示例
-            wget -O .config https://github.com/openwrt/openwrt/raw/master/config.seed || {
-              echo "下载配置文件失败，使用默认配置"
-              # 使用make defconfig生成默认配置
-              make defconfig
+            echo "❌ 未找到配置文件，将尝试从OpenWrt镜像站下载配置文件"
+            # 根据分支信息构造下载链接
+            if [[ "$OPENWRT_BRANCH" == openwrt-* ]]; then
+              # 提取版本号（去掉openwrt-前缀）
+              VERSION=${OPENWRT_BRANCH#openwrt-}
+              CONFIG_URL="https://downloads.openwrt.org/releases/$VERSION/targets/x86/64/config.buildinfo"
+              echo "🔗 正在从版本发布地址下载: $CONFIG_URL"
+            else
+              CONFIG_URL="https://downloads.openwrt.org/snapshots/targets/x86/64/config.buildinfo"
+              echo "🔗 正在从快照地址下载: $CONFIG_URL"
+            fi
+            
+            # 下载config.buildinfo
+            wget -O .config "$CONFIG_URL" || {
+              echo "❌ 下载配置文件失败！"
+              exit 1
             }
           fi
           # 🔧 修复：自动安装缺失的依赖包（关键！解决依赖警告）
