@@ -63,12 +63,21 @@ jobs:
       - name: Load config
         run: |
           cd openwrt
-          # 🔧 优化：支持从 configs 目录加载自定义配置
-          if [ -f ../configs/$CONFIG_FILE.config ]; then
+          # 🔧 优化：支持从 configs 目录加载自定义配置，同时检查OpenWrt.config
+          if [ -f ../OpenWrt.config ]; then
+            echo "使用本地 OpenWrt.config 文件"
+            cp ../OpenWrt.config .config
+          elif [ -f ../configs/$CONFIG_FILE.config ]; then
+            echo "使用 configs/$CONFIG_FILE.config 文件"
             cp ../configs/$CONFIG_FILE.config .config
           else
-            echo "Config file $CONFIG_FILE.config not found!"
-            exit 1
+            echo "未找到本地配置文件，尝试从GitHub下载"
+            # 尝试从GitHub下载OpenWrt配置文件示例
+            wget -O .config https://github.com/openwrt/openwrt/raw/master/config.seed || {
+              echo "下载配置文件失败，使用默认配置"
+              # 使用make defconfig生成默认配置
+              make defconfig
+            }
           fi
           # 🔧 修复：自动安装缺失的依赖包（关键！解决依赖警告）
           make defconfig
