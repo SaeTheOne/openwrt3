@@ -22,7 +22,7 @@ echo "📦 克隆自定义软件包"
 
 # 修改默认主题
 echo "🎨 设置默认主题"
-sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
+#sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 
 # 解决python3-distutils依赖问题
 echo "🔧 解决python3-distutils依赖问题"
