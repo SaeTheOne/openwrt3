@@ -38,6 +38,17 @@ sed -i '/libyubikey/d' feeds/packages/net/freeradius3/Makefile 2>/dev/null || tr
 echo "⚙️ 调整系统设置"
 sed -i 's/\t$//g' package/base-files/files/etc/banner
 
+# 解决stdc-predef.h找不到的工具链问题
+echo "🔧 解决stdc-predef.h找不到的工具链问题"
+# 创建一个包含必要头文件的目录结构
+mkdir -p staging_dir/toolchain-aarch64_generic_gcc-12.3.0_musl/include
+# 创建一个空的stdc-predef.h文件
+ touch staging_dir/toolchain-aarch64_generic_gcc-12.3.0_musl/include/stdc-predef.h
+# 或者通过修改编译选项来避免这个错误
+sed -i 's/CFLAGS_OPTIMIZE := -O3/CFLAGS_OPTIMIZE := -O2 -isystem\$(STAGING_DIR)\/toolchain-*/include/g' include/toplevel.mk 2>/dev/null || true
+# 确保工具链包含路径正确设置
+echo 'export CFLAGS += -I$(STAGING_DIR)/toolchain-*/include' >> include/toplevel.mk 2>/dev/null || true
+
 # 更新软件包缓存
 echo "🔄 更新软件包缓存"
 # ./scripts/feeds update -a
