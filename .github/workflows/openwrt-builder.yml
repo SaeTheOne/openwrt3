@@ -14,7 +14,7 @@ on:
       config:
         description: 'Config file name (without .config)'
         required: true
-        default: 'immortalwrt.config'
+        default: 'armsr'
 
 jobs:
   build:
@@ -23,7 +23,7 @@ jobs:
       OPENWRT_SRC_URL: https://github.com/immortalwrt/immortalwrt.git
       OPENWRT_BRANCH: openwrt-23.05
       FEEDS_CONF: feeds.conf.default
-      CONFIG_FILE: ${{ github.event.inputs.config || 'immortalwrt.config' }}
+      CONFIG_FILE: ${{ github.event.inputs.config || 'armsr' }}
       OUTPUT_DIR: bin/targets/*/*
 
     steps:
@@ -63,11 +63,8 @@ jobs:
       - name: Load config
         run: |
           cd openwrt
-          # 🔧 优化：参考immortalwrt实现，优先使用根目录配置文件
-          if [ -f ../OpenWrt.config ]; then
-            echo "✅ 找到本地 OpenWrt.config 文件"
-            cp ../OpenWrt.config .config
-          elif [ -f ../configs/$CONFIG_FILE.config ]; then
+          # 优先使用configs目录下的配置文件
+          if [ -f ../configs/$CONFIG_FILE.config ]; then
             echo "✅ 找到 configs/$CONFIG_FILE.config 文件"
             cp ../configs/$CONFIG_FILE.config .config
           else
