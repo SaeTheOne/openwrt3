@@ -102,8 +102,12 @@ jobs:
           fi
           # 🔧 修复：自动安装缺失的依赖包（关键！解决依赖警告）
           make defconfig
-          # 🔧 优化：删除冗余的 python3-distutils 依赖声明（批量处理）
-          find package/feeds -name "Makefile" -type f | xargs sed -i '/DEPENDS.*python3-distutils/d'
+          # 🔧 优化：删除冗余的 python3-distutils 依赖声明（批量处理，添加容错处理）
+          if [ -d package/feeds ]; then
+            find package/feeds -name "Makefile" -type f -print0 | xargs -0 -r sed -i '/DEPENDS.*python3-distutils/d' || echo "📝 没有找到需要处理的Makefile文件或处理已完成"
+          else
+            echo "📝 package/feeds目录不存在，跳过依赖清理步骤"
+          fi
 
       - name: Download packages
         run: |
