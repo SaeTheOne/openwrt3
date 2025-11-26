@@ -9,7 +9,7 @@ sed -i 's/192.168.1.1/10.0.0.1/' package/base-files/files/bin/config_generate
 
 # 移除一些不必要的软件包
 echo "🧹 移除不必要的软件包"
-rm -rf feeds/luci/themes/luci-theme-argon
+# 不再删除luci-theme-argon，因为有其他包依赖它
 
 # 克隆自定义软件包
 echo "📦 克隆自定义软件包"
@@ -23,6 +23,16 @@ echo "📦 克隆自定义软件包"
 # 修改默认主题
 echo "🎨 设置默认主题"
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
+
+# 解决python3-distutils依赖问题
+echo "🔧 解决python3-distutils依赖问题"
+# 由于immortalwrt的feeds中可能没有python3-distutils，我们需要创建一个符号链接或修改依赖关系
+sed -i 's/python3-distutils/python3-setuptools/g' feeds/packages/lang/python/*/Makefile 2>/dev/null || true
+
+# 解决libyubikey依赖问题
+echo "🔧 解决libyubikey依赖问题"
+# 如果freeradius3依赖libyubikey但我们不需要yubikey功能，可以禁用该选项
+sed -i '/libyubikey/d' feeds/packages/net/freeradius3/Makefile 2>/dev/null || true
 
 # 调整系统设置
 echo "⚙️ 调整系统设置"
