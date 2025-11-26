@@ -72,15 +72,16 @@ jobs:
             cp ../configs/$CONFIG_FILE.config .config
           else
             echo "❌ 未找到配置文件，将尝试从OpenWrt镜像站下载配置文件"
-            # 根据分支信息构造下载链接
+            # 根据分支信息构造下载链接（ARM架构）
             if [[ "$OPENWRT_BRANCH" == openwrt-* ]]; then
-              # 提取版本号（去掉openwrt-前缀）
-              VERSION=${OPENWRT_BRANCH#openwrt-}
-              CONFIG_URL="https://downloads.openwrt.org/releases/$VERSION/targets/x86/64/config.buildinfo"
-              echo "🔗 正在从版本发布地址下载: $CONFIG_URL"
-            else
-              CONFIG_URL="https://downloads.openwrt.org/snapshots/targets/x86/64/config.buildinfo"
-              echo "🔗 正在从快照地址下载: $CONFIG_URL"
+                # 提取版本号（去掉openwrt-前缀）
+                VERSION=${OPENWRT_BRANCH#openwrt-}
+                CONFIG_URL="https://downloads.openwrt.org/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
+                echo "🔗 正在从版本发布地址下载ARM架构配置: $CONFIG_URL"
+              else
+                # 快照版本
+                CONFIG_URL="https://downloads.openwrt.org/snapshots/targets/armsr/armv8/config.buildinfo"
+                echo "🔗 正在从快照地址下载ARM架构配置: $CONFIG_URL"
             fi
             
             # 下载config.buildinfo
