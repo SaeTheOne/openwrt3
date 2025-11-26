@@ -21,3 +21,15 @@ CONFIG_PACKAGE_getopt=y
 CONFIG_PACKAGE_uuidgen=y
 
 # 最小化依赖，避免复杂包导致的编译问题
+
+# 解决python3相关依赖问题
+CONFIG_PACKAGE_python3-distutils=y
+
+# 解决freeradius3依赖问题
+CONFIG_PACKAGE_libyubikey=y
+
+# 明确禁用可能导致依赖警告的包
+# CONFIG_PACKAGE_libmesa is not set
+# CONFIG_PACKAGE_libwayland is not set
+# CONFIG_PACKAGE_libgraphene is not set
+# CONFIG_PACKAGE_luci-i18n-smartdns-en is not set

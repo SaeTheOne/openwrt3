@@ -58,9 +58,10 @@ jobs:
 
     - name: Load custom feeds
       run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF immortalwrt/feeds.conf.default
+        echo "不使用项目中的feeds.conf.default，直接使用源码自带配置"
         chmod +x $DIY_P1_SH
         cd immortalwrt
+        echo "在immortalwrt目录中执行diy-part1.sh..."
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update feeds

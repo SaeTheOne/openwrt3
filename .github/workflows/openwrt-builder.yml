@@ -46,9 +46,7 @@ jobs:
         run: |
           git clone --depth 1 -b $OPENWRT_BRANCH $OPENWRT_SRC_URL openwrt
           cd openwrt
-          # 🔧 修复：替换 feeds.conf，避免第三方 feeds 依赖过时问题
-          cp ../$FEEDS_CONF ./feeds.conf.default
-          # 🔧 优化：更新并安装 feeds（自动处理部分依赖修复）
+          # 🔧 优化：使用源码自带配置，更新并安装 feeds（自动处理部分依赖修复）
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -108,9 +106,74 @@ jobs:
           # 生成校验和文件
           sha256sum * > firmware-sha256.txt
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-firmware-${{ env.CONFIG_FILE }}
-          path: ./output/*
-          retention-days: 30
+    - name: Compile firmware
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
+        # 使用更安全的方式设置环境变量，避免格式错误
+        # 为DEVICE_NAME提供默认值，确保不会出现空值问题
+        echo "DEVICE_NAME=_armvirt_64" >> "$GITHUB_ENV"
+        
+        if grep -q '^CONFIG_TARGET.*DEVICE.*=y' .config; then
+            DEV_NAME=$(grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' | tr -d '\r\n')
+            if [ -n "$DEV_NAME" ]; then
+                echo "DEVICE_NAME=_${DEV_NAME}" >> "$GITHUB_ENV"
+            fi
+        fi
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
+
+    - name: Check space usage
+      if: ${{ !cancelled() }}
+      run: df -hT
+
+    - name: Upload bin directory
+      uses: actions/upload-artifact@v4
+      if: ${{ steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' }}
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
+
+    - name: Organize firmware files
+      id: organize
+      if: ${{ env.UPLOAD_FIRMWARE == 'true' && !cancelled() }}
+      run: |
+        cd openwrt/bin/targets/*/*
+        ROOTFS=$(find "$PWD" -maxdepth 1 -name "*-generic-rootfs.tar.gz" | head -n1)
+        if [ -z "$ROOTFS" ]; then
+          ROOTFS=$(find "$PWD" -maxdepth 1 -name "*-rootfs.tar.gz" | head -n1)
+        fi
+        if [ -z "$ROOTFS" ]; then
+          echo "❌ No rootfs tarball found!"; ls -la; exit 1
+        fi
+        ls -lh "$ROOTFS"
+        BASENAME=$(basename "$ROOTFS")
+        # 使用标准格式设置输出变量，避免file命令错误
+        echo "rootfs_path=${ROOTFS}" >> "${GITHUB_OUTPUT}"
+        echo "rootfs_basename=${BASENAME}" >> "${GITHUB_OUTPUT}"
+        echo "firmware_path=${PWD}" >> "${GITHUB_OUTPUT}"
+        echo "✅ Found rootfs: $ROOTFS"
+
+    - name: Upload rootfs artifact for packing
+      uses: actions/upload-artifact@v4
+      if: ${{ steps.organize.outputs.rootfs_path && !cancelled() }}
+      with:
+        name: ${{ steps.organize.outputs.rootfs_basename }}
+        path: ${{ steps.organize.outputs.rootfs_path }}
+
+    - name: Clean up after build
+      if: always()
+      run: |
+        echo "🧹 清理构建环境..."
+        sudo rm -rf /workdir/*
+        docker system prune -af 2>/dev/null || true
+        echo "✅ 构建环境清理完成，虚拟机将自动关闭"
+
+  pack:
+    needs: build
+    uses: ./.github/workflows/pack-image.yml
+    with:
+      rootfs_path: ${{ needs.build.outputs.rootfs_path }}
+      kernel_base_url: https://raw.githubusercontent.com/SaeTheOne/openwrt3/main/flippy_kernel

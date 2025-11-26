@@ -10,15 +10,9 @@
 # See /LICENSE for more information.
 #
 
-# 确保feeds.conf.default存在并移除视频相关feeds
-if [ -f "feeds.conf.default" ]; then
-    # 移除可能包含video的feeds行
-    sed -i '/video/d' feeds.conf.default
-    # 确保保留核心feeds但排除video相关内容
-    echo "配置feeds.conf.default文件，排除视频相关feeds"
-else
-    echo "警告：feeds.conf.default不存在，将在后续步骤中处理视频feeds移除"
-fi
+# 使用源码自带的feeds.conf.default配置
+# 不再检查或修改feeds.conf.default文件
+
 
 # Uncomment a feed source
 #sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default

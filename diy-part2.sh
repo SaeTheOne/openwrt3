@@ -9,7 +9,6 @@ sed -i 's/192.168.1.1/10.0.0.1/' package/base-files/files/bin/config_generate
 
 # 移除一些不必要的软件包
 echo "🧹 移除不必要的软件包"
-rm -rf feeds/packages/net/smartdns
 rm -rf feeds/luci/themes/luci-theme-argon
 
 # 克隆自定义软件包
