@@ -14,7 +14,7 @@ on:
       config:
         description: 'Config file name (without .config)'
         required: true
-        default: 'x86_64'
+        default: 'immortalwrt.config'
 
 jobs:
   build:
@@ -23,7 +23,7 @@ jobs:
       OPENWRT_SRC_URL: https://github.com/immortalwrt/immortalwrt.git
       OPENWRT_BRANCH: openwrt-23.05
       FEEDS_CONF: feeds.conf.default
-      CONFIG_FILE: ${{ github.event.inputs.config || 'x86_64' }}
+      CONFIG_FILE: ${{ github.event.inputs.config || 'immortalwrt.config' }}
       OUTPUT_DIR: bin/targets/*/*
 
     steps:
