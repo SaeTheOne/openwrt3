@@ -73,7 +73,20 @@ jobs:
             if [[ "$OPENWRT_BRANCH" == openwrt-* ]]; then
                 # 提取版本号（去掉openwrt-前缀）
                 VERSION=${OPENWRT_BRANCH#openwrt-}
-                CONFIG_URL="https://downloads.openwrt.org/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
+                
+                # 处理版本号格式
+                if [[ "$VERSION" == v* ]]; then
+                    # v开头的版本号（如v23.05.0）
+                    CLEAN_VERSION=${VERSION#v}
+                    CONFIG_URL="https://downloads.openwrt.org/releases/$CLEAN_VERSION/targets/armsr/armv8/config.buildinfo"
+                elif [[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+                    # 主版本号（如23.05），添加.0子版本号
+                    CONFIG_URL="https://downloads.openwrt.org/releases/$VERSION.0/targets/armsr/armv8/config.buildinfo"
+                else
+                    # 完整版本号（如23.05.0）
+                    CONFIG_URL="https://downloads.openwrt.org/releases/$VERSION/targets/armsr/armv8/config.buildinfo"
+                fi
+                
                 echo "🔗 正在从版本发布地址下载ARM架构配置: $CONFIG_URL"
               else
                 # 快照版本
