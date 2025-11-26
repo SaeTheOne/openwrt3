@@ -128,8 +128,31 @@ jobs:
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        
+        # 使用安全的设备名称处理脚本
+        if [ -f "fix_device_name.sh" ]; then
+          echo "🔧 使用安全设备名称处理脚本"
+          bash fix_device_name.sh
+        else
+          # 备选方案：直接进行安全处理
+          echo "🔧 使用备选安全设备名称处理方法"
+          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+          if [ -s DEVICE_NAME ]; then
+            # 移除不允许的字符，只保留字母、数字、下划线和连字符
+            SAFE_DEVICE_NAME=$(cat DEVICE_NAME | sed 's/[^a-zA-Z0-9_-]//g')
+            # 如果处理后的名称为空，使用默认值
+            if [ -z "$SAFE_DEVICE_NAME" ]; then
+              SAFE_DEVICE_NAME="default"
+            fi
+            echo "DEVICE_NAME=_${SAFE_DEVICE_NAME}" >> $GITHUB_ENV
+            echo "✅ 设置安全的DEVICE_NAME: _${SAFE_DEVICE_NAME}"
+          else
+            echo "❌ 未找到设备名称设置默认值"
+            echo "DEVICE_NAME=_default" >> $GITHUB_ENV
+          fi
+        fi
+        
+        # 设置文件日期
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
     - name: Check space usage

@@ -65,6 +65,31 @@ mkdir -p bin/targets/armsr/armv8 || true
 export FORCE_UNSAFE_CONFIGURE=1
 export STAGING_DIR="$(pwd)/staging_dir"
 
+# 添加设备名称安全处理
+# 如果在编译过程中出现Invalid format 'generic'错误，这将确保DEVICE_NAME格式正确
+echo "🔧 添加设备名称安全处理逻辑"
+# 检查是否存在.config文件，如果存在，预处理设备名称
+if [ -f ".config" ]; then
+  echo "✅ 找到.config文件，添加设备名称处理逻辑"
+  # 创建一个临时脚本用于安全处理设备名称
+  cat > fix_device_name.sh << 'EOF'
+#!/bin/bash
+# 安全提取设备名称，移除可能导致格式错误的字符
+grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+if [ -s DEVICE_NAME ]; then
+  # 移除不允许的字符，只保留字母、数字、下划线和连字符
+  SAFE_DEVICE_NAME=$(cat DEVICE_NAME | sed 's/[^a-zA-Z0-9_-]//g')
+  # 如果处理后的名称为空，使用默认值
+  if [ -z "$SAFE_DEVICE_NAME" ]; then
+    SAFE_DEVICE_NAME="default"
+  fi
+  echo "DEVICE_NAME=_${SAFE_DEVICE_NAME}" >> $GITHUB_ENV
+  echo "✅ 设置安全的DEVICE_NAME: _${SAFE_DEVICE_NAME}"
+fi
+EOF
+  chmod +x fix_device_name.sh
+fi
+
 # 修复可能的权限问题
 chmod -R 755 . 2>/dev/null || true
 
