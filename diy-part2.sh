@@ -29,8 +29,22 @@ echo "🔧 解决python3-distutils依赖问题"
 
 # 方法1: 全面修复所有包的python3-distutils依赖问题
 echo "🔧 方法1: 替换所有包中的python3-distutils依赖"
+# 扩展搜索范围，确保覆盖所有包
 sed -i 's/python3-distutils/python3-setuptools/g' feeds/packages/*/*/Makefile 2>/dev/null || true
+sed -i 's/+python3-distutils/+python3-setuptools/g' feeds/packages/*/*/Makefile 2>/dev/null || true
 sed -i 's/PKG_BUILD_DEPENDS:=.*python3-distutils/PKG_BUILD_DEPENDS:=$(filter-out python3-distutils,$(PKG_BUILD_DEPENDS)) python3-setuptools/g' feeds/packages/*/*/Makefile 2>/dev/null || true
+# 额外修复package/feeds下的所有包
+sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/*/*/Makefile 2>/dev/null || true
+sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/*/*/Makefile 2>/dev/null || true
+# 特别处理python-babel、python-docker、python-incremental等新发现的依赖问题
+echo "🔧 特别处理新增的python3-distutils依赖问题"
+for pkg in babel docker incremental fail2ban flent; do
+  if [ -d "package/feeds/packages/python-${pkg}" ] && [ -f "package/feeds/packages/python-${pkg}/Makefile" ]; then
+    echo "✅ 修复python-${pkg}依赖"
+    sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/python-${pkg}/Makefile
+    sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/python-${pkg}/Makefile
+  fi
+done
 
 # 方法2: 为fail2ban和flent创建本地补丁
 if [ -d "package/feeds/packages/fail2ban" ]; then
@@ -97,22 +111,29 @@ cat > fix_dependencies.sh << 'EOF'
 # 直接修复所有已知有问题的包
 echo "🔄 正在修复依赖问题..."
 
-# 为fail2ban修复依赖
-if [ -f "package/feeds/packages/fail2ban/Makefile" ]; then
-  echo "✅ 修复fail2ban依赖"
-  sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/fail2ban/Makefile
-  sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/fail2ban/Makefile
-fi
+# 扩展修复范围，包含所有新发现的有问题的包
+echo "✅ 修复所有python3-distutils依赖问题"
 
-# 为flent修复依赖
-if [ -f "package/feeds/packages/flent/Makefile" ]; then
-  echo "✅ 修复flent依赖"
-  sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/flent/Makefile
-  sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/flent/Makefile
-fi
+# 1. 修复所有feeds/packages下的包
+find feeds/packages -name "Makefile" -type f -exec sed -i 's/python3-distutils/python3-setuptools/g' {} \;
+find feeds/packages -name "Makefile" -type f -exec sed -i 's/+python3-distutils/+python3-setuptools/g' {} \;
 
-# 全局修复
-find package/feeds/packages -name "Makefile" -type f -exec sed -i 's/python3-distutils/python3-setuptools/g' {} \;
+# 2. 修复package/feeds下的所有包
+find package/feeds -name "Makefile" -type f -exec sed -i 's/python3-distutils/python3-setuptools/g' {} \;
+find package/feeds -name "Makefile" -type f -exec sed -i 's/+python3-distutils/+python3-setuptools/g' {} \;
+
+# 3. 特别处理已知有问题的包
+for pkg in babel docker incremental fail2ban flent; do
+  if [ -f "package/feeds/packages/python-${pkg}/Makefile" ]; then
+    echo "✅ 修复python-${pkg}依赖"
+    sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/python-${pkg}/Makefile
+    sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/python-${pkg}/Makefile
+  fi
+done
+
+# 4. 处理可能的构建依赖
+find . -name "Makefile" -type f -exec sed -i 's/PKG_BUILD_DEPENDS:=.*python3-distutils/PKG_BUILD_DEPENDS:=$(filter-out python3-distutils,$(PKG_BUILD_DEPENDS)) python3-setuptools/g' {} \; 2>/dev/null || true
+
 echo "✅ 依赖修复完成"
 EOF
 chmod +x fix_dependencies.sh
