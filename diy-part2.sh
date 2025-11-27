@@ -93,6 +93,34 @@ fi
 # 修复可能的权限问题
 chmod -R 755 . 2>/dev/null || true
 
+# 添加自动内核配置处理，确保没有交互式提示
+echo "🔧 配置自动内核编译设置，避免交互式提示"
+# 设置环境变量以自动回答配置问题
+export KCONFIG_AUTOCONFIG=1
+export KCONFIG_AUTOHEADER=1
+export KCONFIG_AUTOUUID=1
+export KCONFIG_AUTOLOAD=1
+
+# 确保在编译前运行make olddefconfig来自动应用默认配置
+if [ -f "Makefile" ]; then
+  echo "✅ 准备自动处理内核配置"
+  # 创建一个处理内核配置的临时脚本
+  cat > auto_kernel_config.sh << 'EOF'
+#!/bin/bash
+# 自动运行make olddefconfig来解决所有配置问题
+echo "🔄 运行make olddefconfig以自动应用默认配置..."
+make olddefconfig || {
+  echo "❌ make olddefconfig失败，尝试make defconfig..."
+  make defconfig || {
+    echo "❌ make defconfig也失败，尝试清理并重试..."
+    make clean
+    make defconfig
+  }
+}
+EOF
+  chmod +x auto_kernel_config.sh
+fi
+
 echo "✅ 工具链和编译环境修复完成"
 
 # 更新软件包缓存

@@ -126,6 +126,18 @@ jobs:
       run: |
         cd immortalwrt
         echo -e "$(nproc) thread compile"
+        
+        # 自动处理内核配置，避免交互式提示
+        echo "🔧 自动处理内核配置..."
+        if [ -f "auto_kernel_config.sh" ]; then
+          echo "✅ 运行auto_kernel_config.sh脚本"
+          bash auto_kernel_config.sh
+        else
+          echo "🔧 直接运行make olddefconfig"
+          make olddefconfig || make defconfig
+        fi
+        
+        # 开始编译
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         
