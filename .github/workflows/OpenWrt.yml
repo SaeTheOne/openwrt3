@@ -127,6 +127,13 @@ jobs:
         cd openwrt
         echo -e "$(nproc) thread compile"
         
+        # 运行依赖修复脚本
+        echo "🔧 运行依赖修复脚本..."
+        if [ -f "fix_dependencies.sh" ]; then
+          echo "✅ 执行fix_dependencies.sh"
+          bash fix_dependencies.sh
+        fi
+        
         # 自动处理内核配置，避免交互式提示
         echo "🔧 自动处理内核配置..."
         if [ -f "auto_kernel_config.sh" ]; then

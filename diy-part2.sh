@@ -26,15 +26,33 @@ echo "🎨 设置默认主题"
 
 # 解决python3-distutils依赖问题
 echo "🔧 解决python3-distutils依赖问题"
-# 全面修复所有包的python3-distutils依赖问题，包括fail2ban和flent等
+
+# 方法1: 全面修复所有包的python3-distutils依赖问题
+echo "🔧 方法1: 替换所有包中的python3-distutils依赖"
 sed -i 's/python3-distutils/python3-setuptools/g' feeds/packages/*/*/Makefile 2>/dev/null || true
 sed -i 's/PKG_BUILD_DEPENDS:=.*python3-distutils/PKG_BUILD_DEPENDS:=$(filter-out python3-distutils,$(PKG_BUILD_DEPENDS)) python3-setuptools/g' feeds/packages/*/*/Makefile 2>/dev/null || true
 
-# 创建python3-distutils的虚拟包，以满足依赖检查
-echo "🔧 创建python3-distutils虚拟包以满足依赖检查"
-if [ ! -d "package/feeds/packages/python3-distutils" ]; then
-  mkdir -p package/feeds/packages/python3-distutils
-  cat > package/feeds/packages/python3-distutils/Makefile << 'EOF'
+# 方法2: 为fail2ban和flent创建本地补丁
+if [ -d "package/feeds/packages/fail2ban" ]; then
+  echo "✅ 找到fail2ban包，直接修改其Makefile"
+  if [ -f "package/feeds/packages/fail2ban/Makefile" ]; then
+    sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/fail2ban/Makefile
+    sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/fail2ban/Makefile
+  fi
+fi
+
+if [ -d "package/feeds/packages/flent" ]; then
+  echo "✅ 找到flent包，直接修改其Makefile"
+  if [ -f "package/feeds/packages/flent/Makefile" ]; then
+    sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/flent/Makefile
+    sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/flent/Makefile
+  fi
+fi
+
+# 方法3: 创建python3-distutils虚拟包
+echo "🔧 方法3: 创建python3-distutils虚拟包以满足依赖检查"
+mkdir -p package/feeds/packages/python3-distutils
+cat > package/feeds/packages/python3-distutils/Makefile << 'EOF'
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-distutils
@@ -70,7 +88,34 @@ endef
 
 $(eval $(call BuildPackage,python3-distutils))
 EOF
+
+# 方法4: 在make命令前添加特殊处理，强制忽略这些警告
+echo "🔧 方法4: 创建一个预处理脚本，在make前强制修复依赖"
+cat > fix_dependencies.sh << 'EOF'
+#!/bin/bash
+
+# 直接修复所有已知有问题的包
+echo "🔄 正在修复依赖问题..."
+
+# 为fail2ban修复依赖
+if [ -f "package/feeds/packages/fail2ban/Makefile" ]; then
+  echo "✅ 修复fail2ban依赖"
+  sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/fail2ban/Makefile
+  sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/fail2ban/Makefile
 fi
+
+# 为flent修复依赖
+if [ -f "package/feeds/packages/flent/Makefile" ]; then
+  echo "✅ 修复flent依赖"
+  sed -i 's/+python3-distutils/+python3-setuptools/g' package/feeds/packages/flent/Makefile
+  sed -i 's/python3-distutils/python3-setuptools/g' package/feeds/packages/flent/Makefile
+fi
+
+# 全局修复
+find package/feeds/packages -name "Makefile" -type f -exec sed -i 's/python3-distutils/python3-setuptools/g' {} \;
+echo "✅ 依赖修复完成"
+EOF
+chmod +x fix_dependencies.sh
 
 # 解决libyubikey依赖问题
 echo "🔧 解决libyubikey依赖问题"
