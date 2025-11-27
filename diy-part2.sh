@@ -26,8 +26,51 @@ echo "🎨 设置默认主题"
 
 # 解决python3-distutils依赖问题
 echo "🔧 解决python3-distutils依赖问题"
-# 由于immortalwrt的feeds中可能没有python3-distutils，我们需要创建一个符号链接或修改依赖关系
-sed -i 's/python3-distutils/python3-setuptools/g' feeds/packages/lang/python/*/Makefile 2>/dev/null || true
+# 全面修复所有包的python3-distutils依赖问题，包括fail2ban和flent等
+sed -i 's/python3-distutils/python3-setuptools/g' feeds/packages/*/*/Makefile 2>/dev/null || true
+sed -i 's/PKG_BUILD_DEPENDS:=.*python3-distutils/PKG_BUILD_DEPENDS:=$(filter-out python3-distutils,$(PKG_BUILD_DEPENDS)) python3-setuptools/g' feeds/packages/*/*/Makefile 2>/dev/null || true
+
+# 创建python3-distutils的虚拟包，以满足依赖检查
+echo "🔧 创建python3-distutils虚拟包以满足依赖检查"
+if [ ! -d "package/feeds/packages/python3-distutils" ]; then
+  mkdir -p package/feeds/packages/python3-distutils
+  cat > package/feeds/packages/python3-distutils/Makefile << 'EOF'
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=python3-distutils
+PKG_RELEASE:=1
+
+include $(INCLUDE_DIR)/package.mk
+$(call include_mk, python3-package.mk)
+
+define Package/python3-distutils
+  SECTION:=lang
+  CATEGORY:=Languages
+  SUBMENU:=Python
+  TITLE:=Python3 distutils (virtual package)
+  DEPENDS:=+python3-setuptools
+  PROVIDES:=python3-distutils
+endef
+
+define Package/python3-distutils/description
+  Virtual package that depends on python3-setuptools
+  to satisfy dependencies that require python3-distutils.
+endef
+
+define Build/Compile
+  # This is a virtual package, nothing to compile
+endef
+
+define Package/python3-distutils/install
+  # Create empty directory for the package
+  $(INSTALL_DIR) $(1)/usr/lib/python3.11/site-packages/distutils
+  # Create a dummy __init__.py file
+  touch $(1)/usr/lib/python3.11/site-packages/distutils/__init__.py
+endef
+
+$(eval $(call BuildPackage,python3-distutils))
+EOF
+fi
 
 # 解决libyubikey依赖问题
 echo "🔧 解决libyubikey依赖问题"
